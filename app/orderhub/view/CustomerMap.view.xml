@@ -1,0 +1,52 @@
+<mvc:View
+    controllerName="orderhub.controller.CustomerMap"
+    xmlns:mvc="sap.ui.core.mvc"
+    xmlns="sap.m"
+    xmlns:core="sap.ui.core">
+    <Page id="customerPage" title="{i18n>customerMapTitle}" showNavButton="false" enableScrolling="false">
+        <content>
+            <SplitContainer id="splitContainer" mode="ShowHideMode">
+                <masterPages>
+                    <Page title="{i18n>customersTitle}" enableScrolling="true">
+                        <subHeader>
+                            <Toolbar>
+                                <SearchField liveChange=".onSearchCustomers" placeholder="Search customers..." width="100%"/>
+                            </Toolbar>
+                        </subHeader>
+                        <content>
+                            <List id="customerList"
+                                  mode="SingleSelectMaster"
+                                  selectionChange=".onCustomerSelect"
+                                  noDataText="Loading customers..."
+                                  growing="true"
+                                  growingThreshold="50">
+                                <items>
+                                    <StandardListItem
+                                        title="{CompanyName}"
+                                        description="{City}, {Country}"
+                                        icon="sap-icon://customer"
+                                        type="Active"/>
+                                </items>
+                            </List>
+                        </content>
+                    </Page>
+                </masterPages>
+                <detailPages>
+                    <Page id="detailPage" title="Map View" enableScrolling="false">
+                        <content>
+                            <core:HTML id="placeholderHtml" content="&lt;div style='width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:#f0f0f0;color:#999;'&gt;Click a customer to see location&lt;/div&gt;" sanitizeContent="false" />
+                        </content>
+                        <footer>
+                            <OverflowToolbar>
+                                <ToolbarSpacer/>
+                                <Text text="© OpenStreetMap contributors"/>
+                                <ToolbarSpacer/>
+                                <Button id="btnViewDetails" text="View Details" type="Emphasized" enabled="{= ${customers>/selectedCustomerID} ? true : false }" press=".onViewCustomerDetails" />
+                            </OverflowToolbar>
+                        </footer>
+                    </Page>
+                </detailPages>
+            </SplitContainer>
+        </content>
+    </Page>
+</mvc:View>

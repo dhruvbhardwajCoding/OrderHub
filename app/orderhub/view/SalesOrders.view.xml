@@ -1,0 +1,67 @@
+<mvc:View
+    controllerName="orderhub.controller.SalesOrders"
+    xmlns:mvc="sap.ui.core.mvc"
+    xmlns="sap.m">
+    <Page title="{i18n>salesOrdersTitle}" showNavButton="false">
+        <subHeader>
+            <Toolbar>
+                <SearchField id="ordersSearch" placeholder="{i18n>searchOrders}" search=".onSearch" />
+            </Toolbar>
+        </subHeader>
+        <content>
+            <Table id="ordersTable"
+                mode="SingleSelectMaster"
+                selectionChange=".onOrderSelect"
+                items="{
+                    path: '/SalesOrders',
+                    sorter: {
+                        path: 'createdAt',
+                        descending: true
+                    }
+                }">
+                <noData>
+                    <IllustratedMessage />
+                </noData>
+                <columns>
+                    <Column>
+                        <Text text="{i18n>orderNo}" />
+                    </Column>
+                    <Column>
+                        <Text text="{i18n>customer}" />
+                    </Column>
+                    <Column>
+                        <Text text="{i18n>status}" />
+                    </Column>
+                    <Column>
+                        <Text text="{i18n>netAmount}" />
+                    </Column>
+                    <Column>
+                        <Text text="{i18n>grossAmount}" />
+                    </Column>
+                    <Column>
+                        <Text text="{i18n>createdAt}" />
+                    </Column>
+                </columns>
+                <items>
+                    <ColumnListItem type="Navigation">
+                        <cells>
+                            <Text text="{orderNo}" />
+                            <Text text="{customerName}" />
+                            <ObjectStatus text="{status}" state="{
+                                path: 'status',
+                                formatter: '.formatter.statusState'
+                            }" />
+                            <ObjectNumber number="{netAmount}" unit="{currency_code}" />
+                            <ObjectNumber number="{grossAmount}" unit="{currency_code}" />
+                            <Text text="{
+                                path: 'createdAt',
+                                type: 'sap.ui.model.odata.type.DateTimeOffset',
+                                formatOptions: { style: 'medium' }
+                            }" />
+                        </cells>
+                    </ColumnListItem>
+                </items>
+            </Table>
+        </content>
+    </Page>
+</mvc:View>

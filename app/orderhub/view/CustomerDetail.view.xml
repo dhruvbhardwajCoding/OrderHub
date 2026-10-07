@@ -1,0 +1,55 @@
+<mvc:View
+    controllerName="orderhub.controller.CustomerDetail"
+    xmlns:mvc="sap.ui.core.mvc"
+    xmlns="sap.m"
+    xmlns:f="sap.ui.layout.form"
+    xmlns:layout="sap.ui.layout">
+    <Page title="{CompanyName}" showNavButton="true" navButtonPress=".onNavBack">
+        <content>
+            <ObjectHeader
+                title="{CompanyName}"
+                responsive="true"
+                fullScreenOptimized="true">
+                <attributes>
+                    <ObjectAttribute title="{i18n>contactName}" text="{ContactName}" />
+                    <ObjectAttribute title="{i18n>contactTitle}" text="{ContactTitle}" />
+                    <ObjectAttribute title="{i18n>city}" text="{City}" />
+                    <ObjectAttribute title="{i18n>country}" text="{Country}" />
+                </attributes>
+            </ObjectHeader>
+            <Panel headerText="{i18n>customerInfoSection}">
+                <f:SimpleForm editable="false" layout="ResponsiveGridLayout">
+                    <f:content>
+                        <Label text="{i18n>companyName}" />
+                        <Text text="{CompanyName}" />
+                        <Label text="{i18n>contactName}" />
+                        <Text text="{ContactName}" />
+                        <Label text="{i18n>contactTitle}" />
+                        <Text text="{ContactTitle}" />
+                        <Label text="{i18n>address}" />
+                        <Text text="{Address}" />
+                        <Label text="{i18n>city}" />
+                        <Text text="{City}" />
+                        <Label text="{i18n>region}" />
+                        <Text text="{Region}" />
+                        <Label text="{i18n>postalCode}" />
+                        <Text text="{PostalCode}" />
+                        <Label text="{i18n>country}" />
+                        <Text text="{Country}" />
+                        <Label text="{i18n>phone}" />
+                        <Text text="{Phone}" />
+                        <Label text="{i18n>fax}" />
+                        <Text text="{Fax}" />
+                    </f:content>
+                </f:SimpleForm>
+            </Panel>
+        </content>
+        <footer>
+            <Bar>
+                <contentRight>
+                    <Button text="{i18n>createOrder}" type="Emphasized" visible="{= ${user>/roles/SalesRep} === true}" press=".onCreateOrder" />
+                </contentRight>
+            </Bar>
+        </footer>
+    </Page>
+</mvc:View>

@@ -1,0 +1,147 @@
+{
+  "_version": "1.32.0",
+  "sap.app": {
+    "id": "orderhub",
+    "type": "application",
+    "i18n": "i18n/i18n.properties",
+    "title": "{{appTitle}}",
+    "description": "{{appDescription}}",
+    "applicationVersion": {
+      "version": "1.0.0"
+    },
+    "dataSources": {
+      "mainService": {
+        "uri": "/odata/v4/order/",
+        "type": "OData",
+        "settings": {
+          "odataVersion": "4.0"
+        }
+      }
+    }
+  },
+  "sap.ui": {
+    "technology": "UI5",
+    "deviceTypes": {
+      "desktop": true,
+      "tablet": true,
+      "phone": true
+    }
+  },
+  "sap.ui5": {
+    "rootView": {
+      "viewName": "orderhub.view.App",
+      "type": "XML",
+      "id": "app",
+      "async": true
+    },
+    "dependencies": {
+      "minUI5Version": "1.142.0",
+      "libs": {
+        "sap.m": {},
+        "sap.ui.core": {},
+        "sap.tnt": {},
+        "sap.ui.layout": {},
+        "sap.ui.table": {},
+        "sap.uxap": {},
+        "sap.ui.unified": {},
+        "sap.f": {}
+      }
+    },
+    "models": {
+      "i18n": {
+        "type": "sap.ui.model.resource.ResourceModel",
+        "settings": {
+          "bundleName": "orderhub.i18n.i18n"
+        }
+      },
+      "": {
+        "dataSource": "mainService",
+        "type": "sap.ui.model.odata.v4.ODataModel",
+        "settings": {
+          "synchronizationMode": "None",
+          "operationMode": "Server",
+          "autoExpandSelect": true,
+          "groupId": "$auto"
+        }
+      }
+    },
+    "routing": {
+      "config": {
+        "routerClass": "sap.m.routing.Router",
+        "viewType": "XML",
+        "type": "View",
+        "viewPath": "orderhub.view",
+        "controlId": "appContent",
+        "controlAggregation": "pages",
+        "async": true
+      },
+      "routes": [
+        {
+          "name": "dashboard",
+          "pattern": "",
+          "target": "dashboard"
+        },
+        {
+          "name": "customerMap",
+          "pattern": "customers",
+          "target": "customerMap"
+        },
+        {
+          "name": "customerDetail",
+          "pattern": "customers/{customerID}",
+          "target": "customerDetail"
+        },
+        {
+          "name": "salesOrders",
+          "pattern": "orders",
+          "target": "salesOrders"
+        },
+        {
+          "name": "salesOrder",
+          "pattern": "orders/{orderID}",
+          "target": "salesOrder"
+        },
+        {
+          "name": "createOrder",
+          "pattern": "orders/create/{customerID}",
+          "target": "createOrder"
+        },
+        {
+          "name": "products",
+          "pattern": "products",
+          "target": "products"
+        }
+      ],
+      "targets": {
+        "dashboard": {
+          "viewName": "Dashboard",
+          "viewLevel": 1
+        },
+        "customerMap": {
+          "viewName": "CustomerMap",
+          "viewLevel": 2
+        },
+        "customerDetail": {
+          "viewName": "CustomerDetail",
+          "viewLevel": 3
+        },
+        "salesOrders": {
+          "viewName": "SalesOrders",
+          "viewLevel": 4
+        },
+        "salesOrder": {
+          "viewName": "SalesOrder",
+          "viewLevel": 5
+        },
+        "createOrder": {
+          "viewName": "CreateOrder",
+          "viewLevel": 6
+        },
+        "products": {
+          "viewName": "Products",
+          "viewLevel": 7
+        }
+      }
+    }
+  }
+}

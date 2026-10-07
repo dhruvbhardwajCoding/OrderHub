@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Northwind Order Hub</title>
+    <script id="sap-ui-bootstrap"
+        src="https://sapui5.hana.ondemand.com/1.142.0/resources/sap-ui-core.js"
+        data-sap-ui-theme="sap_horizon"
+        data-sap-ui-resourceroots='{"orderhub": "./"}'
+        data-sap-ui-compatVersion="edge"
+        data-sap-ui-async="true"
+        data-sap-ui-frameOptions="trusted"
+        data-sap-ui-libs="sap.m, sap.ui.core, sap.tnt, sap.ui.layout, sap.ui.table, sap.uxap, sap.ui.unified, sap.f">
+    </script>
+    <script>
+        sap.ui.getCore().attachInit(function () {
+            sap.ui.require(["sap/ui/core/ComponentContainer"], function (ComponentContainer) {
+                new sap.m.Shell({
+                    app: new ComponentContainer({
+                        name: "orderhub",
+                        async: true,
+                        height: "100%",
+                        settings: {
+                            id: "orderhub"
+                        }
+                    })
+                }).placeAt("content");
+            });
+        });
+    </script>
+</head>
+<body class="sapUiBody sapUiSizeCompact" id="content">
+</body>
+</html>

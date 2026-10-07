@@ -1,0 +1,59 @@
+<mvc:View
+    controllerName="orderhub.controller.Products"
+    xmlns:mvc="sap.ui.core.mvc"
+    xmlns="sap.m">
+    <Page title="{i18n>productsTitle}" showNavButton="false">
+        <subHeader>
+            <Toolbar>
+                <SearchField id="productsSearch" placeholder="{i18n>searchProducts}" search=".onSearch" />
+            </Toolbar>
+        </subHeader>
+        <content>
+            <Table id="productsTable"
+                items="{
+                    path: '/Products',
+                    sorter: {
+                        path: 'ProductName'
+                    }
+                }">
+                <noData>
+                    <IllustratedMessage />
+                </noData>
+                <columns>
+                    <Column>
+                        <Text text="{i18n>productName}" />
+                    </Column>
+                    <Column>
+                        <Text text="{i18n>unitPrice}" />
+                    </Column>
+                    <Column>
+                        <Text text="{i18n>unitsInStock}" />
+                    </Column>
+                    <Column>
+                        <Text text="{i18n>discontinued}" />
+                    </Column>
+                    <Column>
+                        <Text text="{i18n>categoryId}" />
+                    </Column>
+                </columns>
+                <items>
+                    <ColumnListItem>
+                        <cells>
+                            <Text text="{ProductName}" />
+                            <ObjectNumber number="{UnitPrice}" unit="USD" />
+                            <Text text="{UnitsInStock}" />
+                            <ObjectStatus text="{
+                                path: 'Discontinued',
+                                formatter: '.formatter.discontinuedText'
+                            }" state="{
+                                path: 'Discontinued',
+                                formatter: '.formatter.discontinuedState'
+                            }" />
+                            <Text text="{CategoryID}" />
+                        </cells>
+                    </ColumnListItem>
+                </items>
+            </Table>
+        </content>
+    </Page>
+</mvc:View>

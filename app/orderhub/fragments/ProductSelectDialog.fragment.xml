@@ -1,0 +1,19 @@
+<core:FragmentDefinition
+    xmlns="sap.m"
+    xmlns:core="sap.ui.core">
+    <SelectDialog
+        title="{i18n>selectProduct}"
+        search=".onProductSearch"
+        confirm=".onProductSelectConfirm"
+        liveChange=".onProductSearch"
+        items="{
+            path: '/Products',
+            filters: [{ path: 'Discontinued', operator: 'EQ', value1: false }]
+        }">
+        <StandardListItem
+            title="{ProductName}"
+            description="Price: {UnitPrice} | Stock: {UnitsInStock}"
+            info="{= ${Discontinued} ? 'Discontinued' : '' }"
+            infoState="{= ${Discontinued} ? 'Error' : 'None' }" />
+    </SelectDialog>
+</core:FragmentDefinition>

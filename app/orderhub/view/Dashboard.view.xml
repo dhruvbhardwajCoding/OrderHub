@@ -1,0 +1,60 @@
+<mvc:View
+    controllerName="orderhub.controller.Dashboard"
+    xmlns:mvc="sap.ui.core.mvc"
+    xmlns="sap.m"
+    xmlns:core="sap.ui.core"
+    xmlns:layout="sap.ui.layout">
+    <Page title="{i18n>dashboardTitle}" showNavButton="false">
+        <content>
+            <Panel headerText="{i18n>overviewHeader}">
+                <HBox wrap="Wrap" fitContainer="true" renderType="Bare">
+                    <GenericTile header="{i18n>totalOrdersHeader}" press="onOrderPress">
+                        <TileContent>
+                            <NumericContent value="{dashboard>/totalOrders}" />
+                        </TileContent>
+                    </GenericTile>
+                    <GenericTile header="{i18n>pendingApprovalsHeader}">
+                        <TileContent>
+                            <NumericContent value="{dashboard>/pendingApprovals}" />
+                        </TileContent>
+                    </GenericTile>
+                    <GenericTile header="{i18n>totalRevenueHeader}">
+                        <TileContent>
+                            <NumericContent value="{dashboard>/totalRevenue}" />
+                        </TileContent>
+                    </GenericTile>
+                </HBox>
+            </Panel>
+            <Panel headerText="{i18n>recentOrdersHeader}">
+                <Table items="{
+                    path: '/SalesOrders',
+                    parameters: {
+                        $orderby: 'createdAt desc'
+                    }
+                }">
+                    <columns>
+                        <Column><Text text="{i18n>orderNo}" /></Column>
+                        <Column><Text text="{i18n>customer}" /></Column>
+                        <Column><Text text="{i18n>status}" /></Column>
+                        <Column><Text text="{i18n>grossAmount}" /></Column>
+                        <Column><Text text="{i18n>createdAt}" /></Column>
+                    </columns>
+                    <items>
+                        <ColumnListItem type="Navigation" press=".onOrderPress">
+                            <cells>
+                                <Text text="{orderNo}" />
+                                <Text text="{customerName}" />
+                                <ObjectStatus text="{status}" state="{
+                                    path: 'status',
+                                    formatter: '.formatter.statusState'
+                                }" />
+                                <Text text="{grossAmount}" />
+                                <Text text="{createdAt}" />
+                            </cells>
+                        </ColumnListItem>
+                    </items>
+                </Table>
+            </Panel>
+        </content>
+    </Page>
+</mvc:View>

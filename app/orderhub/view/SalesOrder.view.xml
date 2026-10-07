@@ -1,0 +1,95 @@
+<mvc:View
+    controllerName="orderhub.controller.SalesOrder"
+    xmlns:mvc="sap.ui.core.mvc"
+    xmlns="sap.m"
+    xmlns:f="sap.ui.layout.form">
+    <Page title="{orderNo}" showNavButton="true" navButtonPress=".onNavBack">
+        <ObjectHeader
+            title="{orderNo}"
+            number="{grossAmount}"
+            numberUnit="{currency_code}">
+            <attributes>
+                <ObjectAttribute text="{customerName}" />
+                <ObjectAttribute text="{status}" />
+            </attributes>
+            <statuses>
+                <ObjectStatus text="{status}" state="{
+                    path: 'status',
+                    formatter: '.formatter.statusState'
+                }" />
+            </statuses>
+        </ObjectHeader>
+        
+        <Panel headerText="{i18n>orderDetails}">
+            <f:SimpleForm>
+                <f:content>
+                    <Label text="{i18n>orderNo}" />
+                    <Text text="{orderNo}" />
+                    <Label text="{i18n>customerID}" />
+                    <Text text="{customerID}" />
+                    <Label text="{i18n>customerName}" />
+                    <Text text="{customerName}" />
+                    <Label text="{i18n>status}" />
+                    <Text text="{status}" />
+                    <Label text="{i18n>currencyCode}" />
+                    <Text text="{currency_code}" />
+                    <Label text="{i18n>netAmount}" />
+                    <Text text="{netAmount}" />
+                    <Label text="{i18n>taxAmount}" />
+                    <Text text="{taxAmount}" />
+                    <Label text="{i18n>grossAmount}" />
+                    <Text text="{grossAmount}" />
+                    <Label text="{i18n>createdAt}" />
+                    <Text text="{
+                        path: 'createdAt',
+                        type: 'sap.ui.model.odata.type.DateTimeOffset',
+                        formatOptions: { style: 'medium' }
+                    }" />
+                </f:content>
+            </f:SimpleForm>
+        </Panel>
+
+        <Panel headerText="{i18n>orderItems}">
+            <Table items="{items}">
+                <columns>
+                    <Column>
+                        <Text text="{i18n>product}" />
+                    </Column>
+                    <Column>
+                        <Text text="{i18n>unitPrice}" />
+                    </Column>
+                    <Column>
+                        <Text text="{i18n>quantity}" />
+                    </Column>
+                    <Column>
+                        <Text text="{i18n>discount}" />
+                    </Column>
+                    <Column>
+                        <Text text="{i18n>netAmount}" />
+                    </Column>
+                </columns>
+                <items>
+                    <ColumnListItem>
+                        <cells>
+                            <Text text="{productName}" />
+                            <ObjectNumber number="{unitPrice}" />
+                            <Text text="{quantity}" />
+                            <Text text="{discount}" />
+                            <ObjectNumber number="{netAmount}" />
+                        </cells>
+                    </ColumnListItem>
+                </items>
+            </Table>
+        </Panel>
+
+        <footer>
+            <Bar>
+                <contentRight>
+                    <Button id="btnSubmit" text="{i18n>submit}" type="Emphasized" visible="false" press=".onSubmit" />
+                    <Button id="btnApprove" text="{i18n>approve}" type="Accept" visible="false" press=".onApprove" />
+                    <Button id="btnCancel" text="{i18n>cancel}" type="Reject" visible="false" press=".onCancel" />
+                </contentRight>
+            </Bar>
+        </footer>
+    </Page>
+</mvc:View>

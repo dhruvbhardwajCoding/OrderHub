@@ -1,0 +1,33 @@
+<mvc:View
+    controllerName="orderhub.controller.App"
+    xmlns:mvc="sap.ui.core.mvc"
+    xmlns="sap.m"
+    xmlns:tnt="sap.tnt"
+    xmlns:core="sap.ui.core"
+    displayBlock="true">
+    <tnt:ToolPage id="toolPage">
+        <tnt:header>
+            <tnt:ToolHeader>
+                <Button icon="sap-icon://menu2" type="Transparent" press=".onMenuButtonPress">
+                    <layoutData>
+                        <OverflowToolbarLayoutData priority="NeverOverflow" />
+                    </layoutData>
+                </Button>
+                <Title text="{i18n>appTitle}" />
+            </tnt:ToolHeader>
+        </tnt:header>
+        <tnt:sideContent>
+            <tnt:SideNavigation>
+                <tnt:NavigationList itemSelect=".onSideNavItemSelect">
+                    <tnt:NavigationListItem icon="sap-icon://home" text="{i18n>navDashboard}" key="dashboard" />
+                    <tnt:NavigationListItem icon="sap-icon://customer" text="{i18n>navCustomers}" key="customerMap" />
+                    <tnt:NavigationListItem icon="sap-icon://product" text="{i18n>navProducts}" key="products" />
+                    <tnt:NavigationListItem icon="sap-icon://sales-order" text="{i18n>navSalesOrders}" key="salesOrders" />
+                </tnt:NavigationList>
+            </tnt:SideNavigation>
+        </tnt:sideContent>
+        <tnt:mainContents>
+            <NavContainer id="appContent" />
+        </tnt:mainContents>
+    </tnt:ToolPage>
+</mvc:View>
