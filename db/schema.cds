@@ -62,3 +62,16 @@ entity Invoices : cuid, managed {
   sentAt      : DateTime;
   mailStatus  : String(20); // 'PENDING', 'SENT', 'FAILED'
 }
+
+/**
+ * CustomerGeo — geocoded customer coordinates, cached so Nominatim is
+ * called at most once per customer (MAP-02; section 10's "Geocoding"
+ * rule: max 1 request/second, custom User-Agent, cached here).
+ */
+entity CustomerGeo {
+  key customerID : String(5);
+  latitude       : Decimal(9,6);
+  longitude      : Decimal(9,6);
+  geocodedAt     : Timestamp;
+  failed         : Boolean default false; // true if Nominatim found nothing — don't retry forever
+}

@@ -3,9 +3,10 @@
 const cds = require('@sap/cds');
 const LOG = cds.log('analytics-service');
 
-const { getCustomers, getProducts, getCategories, withTimeout } = require('./lib/northwind');
+const { getCustomers, getAllCustomers, getProducts, getCategories, withTimeout } = require('./lib/northwind');
+const { scheduleBackgroundGeocode } = require('./lib/geocode');
 const { round2 } = require('./lib/calculations');
-const { ORDER_STATUS } = require('./lib/constants');
+const { ORDER_STATUS, REVENUE_BAND_HIGH_THRESHOLD, REVENUE_BAND_MEDIUM_THRESHOLD } = require('./lib/constants');
 
 // "Revenue" = orders a manager has actually approved — New/Submitted orders
 // aren't confirmed business yet, and Cancelled orders never happened.
@@ -180,6 +181,66 @@ module.exports = class AnalyticsService extends cds.ApplicationService {
           revenue: round2(stats.revenue),
         };
       });
+    });
+
+    /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+     *  getCustomerLocations — MAP-01, MAP-02, MAP-03, MAP-04
+     *  Joins every Northwind customer with its cached CustomerGeo fix and
+     *  its local order history. Customers with no cached coordinates yet
+     *  are queued for background geocoding (srv/lib/geocode.js) and simply
+     *  excluded from this response — they appear once a later call finds
+     *  them cached, never blocking this request on live Nominatim calls.
+     * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+
+    this.on('getCustomerLocations', async (req) => {
+      let customers;
+      try {
+        customers = await withTimeout(getAllCustomers(northwind), 'reading all customers for the map');
+      } catch (err) {
+        LOG.error('getCustomerLocations: Northwind lookup failed', err.message);
+        return req.reject(err.status || 502, err.message);
+      }
+
+      const orders = await db.run(SELECT.from('orderhub.SalesOrders').columns('customerID', 'grossAmount', 'status'));
+      const statsByCustomer = new Map();
+      for (const o of orders) {
+        const s = statsByCustomer.get(o.customerID) || { orderCount: 0, revenue: 0 };
+        s.orderCount += 1; // MAP-03: order count, any status — a volume metric, not a money one
+        if (CONFIRMED_STATUSES.includes(o.status)) s.revenue += Number(o.grossAmount);
+        statsByCustomer.set(o.customerID, s);
+      }
+
+      const geoRows = await db.run(SELECT.from('orderhub.CustomerGeo'));
+      const geoByCustomer = new Map(geoRows.map((g) => [g.customerID, g]));
+
+      const toGeocode = customers.filter((c) => !geoByCustomer.has(c.CustomerID));
+      if (toGeocode.length) scheduleBackgroundGeocode(toGeocode);
+
+      return customers
+        .map((c) => {
+          const geo = geoByCustomer.get(c.CustomerID);
+          if (!geo || geo.failed || geo.latitude == null || geo.longitude == null) return null;
+
+          const stats = statsByCustomer.get(c.CustomerID) || { orderCount: 0, revenue: 0 };
+          const revenue = round2(stats.revenue);
+          const revenueBand = revenue >= REVENUE_BAND_HIGH_THRESHOLD ? 'High'
+            : revenue >= REVENUE_BAND_MEDIUM_THRESHOLD ? 'Medium'
+            : 'Low';
+
+          return {
+            customerID: c.CustomerID,
+            customerName: c.CompanyName,
+            contactName: c.ContactName || '',
+            city: c.City || '',
+            country: c.Country || '',
+            latitude: geo.latitude,
+            longitude: geo.longitude,
+            orderCount: stats.orderCount,
+            revenue,
+            revenueBand,
+          };
+        })
+        .filter(Boolean);
     });
 
     await super.init();

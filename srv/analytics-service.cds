@@ -40,8 +40,22 @@ service AnalyticsService @(path: '/odata/v4/analytics')
     revenue      : Decimal(15,2);
   }
 
+  type CustomerLocation {
+    customerID   : String;
+    customerName : String;
+    contactName  : String;
+    city         : String;
+    country      : String;
+    latitude     : Decimal(9,6);
+    longitude    : Decimal(9,6);
+    orderCount   : Integer;
+    revenue      : Decimal(15,2);
+    revenueBand  : String; // 'High' | 'Medium' | 'Low'
+  }
+
   function getKPIs()                      returns DashboardKPIs;
   function getRevenueByCountry()          returns array of RevenueByCountry;
   function getRevenueByCategory()         returns array of RevenueByCategory;
   function getTopCustomers(top: Integer)  returns array of TopCustomer;
+  function getCustomerLocations()         returns array of CustomerLocation;
 }

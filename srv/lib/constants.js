@@ -18,6 +18,15 @@ const MAX_DISCOUNT = 25;   // percent
 
 const DEFAULT_CURRENCY = 'USD';
 
+/**
+ * Customer-map revenue band thresholds (MAP-04, Should). A customer's
+ * confirmed (Approved/Invoiced) order revenue decides the colour of its
+ * spot on the map: >= HIGH is "High revenue", >= MEDIUM is "Medium",
+ * anything else (including zero orders) is "Low or no orders".
+ */
+const REVENUE_BAND_HIGH_THRESHOLD   = Number(process.env.REVENUE_BAND_HIGH_THRESHOLD)   || 5000;
+const REVENUE_BAND_MEDIUM_THRESHOLD = Number(process.env.REVENUE_BAND_MEDIUM_THRESHOLD) || 1000;
+
 /** Canonical status values — keep in sync with db/schema.cds */
 const ORDER_STATUS = Object.freeze({
   NEW:        'New',
@@ -49,4 +58,6 @@ module.exports = {
   DEFAULT_CURRENCY,
   ORDER_STATUS,
   VALID_TRANSITIONS,
+  REVENUE_BAND_HIGH_THRESHOLD,
+  REVENUE_BAND_MEDIUM_THRESHOLD,
 };

@@ -77,6 +77,18 @@ async function getCustomers(srv, customerIDs) {
 }
 
 /**
+ * Fetch every Northwind customer (for the customer map — MAP-01).
+ *
+ * @param {object} srv – connected Northwind CDS service
+ * @returns {Promise<object[]>} array of customer records
+ */
+async function getAllCustomers(srv) {
+  const { Customers } = srv.entities;
+  const customers = await run(srv, SELECT.from(Customers), 'reading all customers');
+  return customers || [];
+}
+
+/**
  * Fetch one or more products by their IDs from the Northwind remote service.
  *
  * @param {object}   srv        – connected Northwind CDS service
@@ -87,6 +99,19 @@ async function getProducts(srv, productIDs) {
   if (!productIDs || productIDs.length === 0) return [];
   const { Products } = srv.entities;
   const products = await run(srv, SELECT.from(Products).where({ ProductID: { in: productIDs } }), 'reading products');
+  return products || [];
+}
+
+/**
+ * Fetch every Northwind product (e.g. for matching free-text AI output
+ * against real products — AI-01).
+ *
+ * @param {object} srv – connected Northwind CDS service
+ * @returns {Promise<object[]>} array of product records
+ */
+async function getAllProducts(srv) {
+  const { Products } = srv.entities;
+  const products = await run(srv, SELECT.from(Products), 'reading all products');
   return products || [];
 }
 
@@ -104,4 +129,4 @@ async function getCategories(srv, categoryIDs) {
   return categories || [];
 }
 
-module.exports = { getCustomer, getCustomers, getProducts, getCategories, withTimeout, TIMEOUT_MS };
+module.exports = { getCustomer, getCustomers, getAllCustomers, getProducts, getAllProducts, getCategories, withTimeout, TIMEOUT_MS };

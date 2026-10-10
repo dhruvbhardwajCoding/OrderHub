@@ -10,11 +10,13 @@ process.env.CDS_REQUIRES_AUTH_KIND = 'mocked';
 
 const cds = require('@sap/cds');
 
+const CUSTOMERS = {
+  ALFKI: { CustomerID: 'ALFKI', CompanyName: 'Alfreds Futterkiste', ContactName: 'Maria Anders', City: 'Berlin', Country: 'Germany' },
+  ANTON: { CustomerID: 'ANTON', CompanyName: 'Antonio Moreno Taquería', ContactName: 'Antonio Moreno', City: 'México D.F.', Country: 'Mexico' },
+  BERGS: { CustomerID: 'BERGS', CompanyName: 'Berglunds snabbköp', ContactName: 'Christina Berglund', City: 'Luleå', Country: 'Sweden' },
+};
+
 jest.mock('../srv/lib/northwind', () => {
-  const customers = {
-    ALFKI: { CustomerID: 'ALFKI', CompanyName: 'Alfreds Futterkiste', Country: 'Germany' },
-    ANTON: { CustomerID: 'ANTON', CompanyName: 'Antonio Moreno Taquería', Country: 'Mexico' },
-  };
   const products = [
     { ProductID: 1, ProductName: 'Chai', UnitPrice: 18.0, UnitsInStock: 39, Discontinued: false, CategoryID: 1 },
     { ProductID: 3, ProductName: 'Aniseed Syrup', UnitPrice: 10.0, UnitsInStock: 13, Discontinued: false, CategoryID: 2 },
@@ -25,13 +27,20 @@ jest.mock('../srv/lib/northwind', () => {
   ];
 
   return {
-    getCustomer: jest.fn(async (srv, id) => customers[id] || null),
-    getCustomers: jest.fn(async (srv, ids) => ids.map((id) => customers[id]).filter(Boolean)),
+    getCustomer: jest.fn(async (srv, id) => global.__CUSTOMERS__[id] || null),
+    getCustomers: jest.fn(async (srv, ids) => ids.map((id) => global.__CUSTOMERS__[id]).filter(Boolean)),
+    getAllCustomers: jest.fn(async () => Object.values(global.__CUSTOMERS__)),
     getProducts: jest.fn(async (srv, ids) => products.filter((p) => ids.includes(p.ProductID))),
     getCategories: jest.fn(async (srv, ids) => categories.filter((c) => ids.includes(c.CategoryID))),
     withTimeout: jest.fn((promise) => promise),
   };
 });
+global.__CUSTOMERS__ = CUSTOMERS;
+
+jest.mock('../srv/lib/geocode', () => ({
+  scheduleBackgroundGeocode: jest.fn(),
+}));
+const { scheduleBackgroundGeocode } = require('../srv/lib/geocode');
 
 const ALICE = { auth: { username: 'alice', password: 'alice' } }; // SalesRep
 
@@ -117,6 +126,47 @@ describe('AnalyticsService', () => {
       expect(status).toBe(200);
       expect(data.value.length).toBeLessThanOrEqual(5);
       expect(data.value.map((c) => c.customerID).sort()).toEqual(['ALFKI', 'ANTON']);
+    });
+  });
+
+  describe('getCustomerLocations() (MAP-01, MAP-02, MAP-03, MAP-04)', () => {
+    beforeAll(async () => {
+      const db = await cds.connect.to('db');
+      await db.run(INSERT.into('orderhub.CustomerGeo').entries([
+        { customerID: 'ALFKI', latitude: 52.52, longitude: 13.405, geocodedAt: new Date().toISOString(), failed: false },
+        { customerID: 'ANTON', latitude: 19.4326, longitude: -99.1332, geocodedAt: new Date().toISOString(), failed: false },
+        // BERGS deliberately left uncached — exercises the "schedule geocoding" path.
+      ]));
+      // One confirmed order for ALFKI so its revenue band is computable.
+      await createConfirmedOrder('ALFKI', 1, 1); // Chai, 19.80
+    });
+
+    test('returns only customers with a cached (non-failed) geocode result', async () => {
+      const { status, data } = await GET(`${AN_SVC}/getCustomerLocations()`, ALICE);
+      expect(status).toBe(200);
+
+      const ids = data.value.map((c) => c.customerID).sort();
+      expect(ids).toEqual(['ALFKI', 'ANTON']);
+      expect(ids).not.toContain('BERGS');
+    });
+
+    test('includes coordinates, order count and revenue band for each located customer', async () => {
+      const { data } = await GET(`${AN_SVC}/getCustomerLocations()`, ALICE);
+      const alfki = data.value.find((c) => c.customerID === 'ALFKI');
+
+      expect(alfki.latitude).toBeCloseTo(52.52, 2);
+      expect(alfki.longitude).toBeCloseTo(13.405, 2);
+      expect(alfki.customerName).toBe('Alfreds Futterkiste');
+      expect(alfki.orderCount).toBeGreaterThanOrEqual(1);
+      expect(['High', 'Medium', 'Low']).toContain(alfki.revenueBand);
+    });
+
+    test('schedules background geocoding for customers with no cached result yet', async () => {
+      await GET(`${AN_SVC}/getCustomerLocations()`, ALICE);
+      expect(scheduleBackgroundGeocode).toHaveBeenCalled();
+      const scheduled = scheduleBackgroundGeocode.mock.calls[0][0];
+      expect(scheduled.map((c) => c.CustomerID)).toContain('BERGS');
+      expect(scheduled.map((c) => c.CustomerID)).not.toContain('ALFKI');
     });
   });
 });
