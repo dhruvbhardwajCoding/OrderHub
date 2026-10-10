@@ -411,7 +411,7 @@ Status against the assessment brief's requirement IDs (section 5). ✅ done · �
 
 | ID | Requirement | Status | Note |
 |---|---|---|---|
-| SO-01 | Create/edit/list/delete orders with items | 🟡 | Create/edit/list done; `DELETE` is permitted for SalesRep at the API level but no UI delete button exists yet |
+| SO-01 | Create/edit/list/delete orders with items | ✅ | Delete button on the order object page (SalesRep, `New` orders only); server rejects deleting a non-`New` order (409) since `Invoices.order` isn't cascade-owned by `SalesOrders` |
 | SO-02 | Store Northwind keys + snapshot name/price | ✅ | |
 | SO-03 | Server-side validation (customer/product exist, qty 1–999, discount 0–25%, not discontinued) | ✅ | |
 | SO-04 | Server-side net/tax/gross; client never sends totals | ✅ | |
@@ -419,16 +419,16 @@ Status against the assessment brief's requirement IDs (section 5). ✅ done · �
 | SO-06 | Status changes only through bound actions | ✅ | `status` is `@readonly`; a direct `PATCH` is rejected (tested) |
 | SO-07 | Orders over 5,000 need manager approval before invoicing | ✅ | |
 | SO-08 (Should) | Draft editing (`@odata.draft.enabled`) | ⬜ | Not started |
-| SO-09 (Should) | Warn when quantity exceeds `UnitsInStock` | 🟡 | Server emits the warning (`req.warn`, tested); not yet surfaced in the UI |
+| SO-09 (Should) | Warn when quantity exceeds `UnitsInStock` | ✅ | Server emits the warning (`req.warn`, tested); create-order UI shows a per-row warning badge, including for items pre-filled from the AI assistant |
 
 ### Map
 
 | ID | Requirement | Status | Note |
 |---|---|---|---|
-| MAP-01 | Customers as spots on an OpenStreetMap-based map built with UI5 controls | ⬜ | Current `CustomerMap` view embeds a raw OSM iframe — doesn't meet "your own UI5 control with properties/aggregations/a renderer"; intentionally deferred and will be rebuilt |
-| MAP-02 | Geocode once, cache in SQLite | ⬜ | No `CustomerGeo` entity yet |
-| MAP-03 | Click a spot → popover with name/city/order count, link to customer page | ⬜ | |
-| MAP-04 (Should) | Filter by country, colour by revenue band | ⬜ | |
+| MAP-01 | Customers as spots on an OpenStreetMap-based map built with UI5 controls | ✅ | Replaced the raw OSM iframe with `orderhub.control.LeafletMap`, a real `sap.ui.core.Control` (properties, an aggregation-free marker API, apiVersion-2 renderer) wrapping Leaflet.js — the spec-accepted fallback for `sap.ui.mdc.Geomap`; see DECISIONS.md ADR 23 |
+| MAP-02 | Geocode once, cache in SQLite | ✅ | `db/schema.cds`'s `CustomerGeo`; `srv/lib/geocode.js` (Nominatim, throttled, cascading fallback), background-filled via `scheduleBackgroundGeocode` |
+| MAP-03 | Click a spot → popover with name/city/order count, link to customer page | ✅ | `CustomerSpotPopover` fragment; "Open customer"/"New order" actions |
+| MAP-04 (Should) | Filter by country, colour by revenue band | ✅ | Country/band `Select`s in the filter toolbar; marker colour driven by `revenueBand` |
 
 ### Analytics
 
@@ -451,8 +451,8 @@ Status against the assessment brief's requirement IDs (section 5). ✅ done · �
 
 | ID | Requirement | Status | Note |
 |---|---|---|---|
-| AI-01 | One AI feature wired through a CAP action/function | ⬜ | Intentionally deferred to last |
-| AI-02 | App works fully with no AI key configured | ⬜ | N/A until AI-01 exists |
+| AI-01 | One AI feature wired through a CAP action/function | ✅ | "Order from text" (section 9, option A) — `proposeOrderFromText` action on `OrderService`, backed by Google Gemini (`srv/lib/ai.js`); every customer/product hint is matched against live Northwind data server-side before anything is shown, never trusted from the model directly; see DECISIONS.md ADR 24 |
+| AI-02 | App works fully with no AI key configured | ✅ | No `GEMINI_API_KEY` → shell bar button is disabled with a tooltip explaining why (`/user-api/currentUser`'s `aiAvailable` flag); the action itself also degrades cleanly (200, empty proposal) rather than erroring if called directly |
 
 ### Non-functional (section 10)
 
@@ -461,10 +461,10 @@ Status against the assessment brief's requirement IDs (section 5). ✅ done · �
 | Setup | `git clone`, `npm install`, copy `.env.example`, `cds watch` starts it, `npm test` runs all tests | ✅ | Not independently re-verified from a fresh clone in this session |
 | Security | Mocked auth, 3 users/roles, `@requires`/`@restrict` | ✅ | `kind: 'mocked'` (see DECISIONS.md ADR 14 for why `kind: 'dummy'` doesn't work) |
 | Secrets | No keys/passwords/tokens in the repo or its history | ✅ | All via env vars, documented in `.env.example` |
-| Tests | 10+ `cds.test` tests across the listed categories, incl. PDF bytes starting with `%PDF` | ✅ | 90 tests; `test/pdf.test.js` checks the literal `%PDF` requirement against the real, unmocked generator |
+| Tests | 10+ `cds.test` tests across the listed categories, incl. PDF bytes starting with `%PDF` | ✅ | 122 tests; `test/pdf.test.js` checks the literal `%PDF` requirement against the real, unmocked generator |
 | Offline tests | No real Northwind/LLM/Document Management calls in tests | ✅ | `[test]` profile + CSV fixtures for Northwind; `sdm-client`/`pdf` mocked where needed |
-| Geocoding | Nominatim rate limit, User-Agent, `CustomerGeo` cache | ⬜ | Not started (part of Map) |
-| Performance | Server-side paging; no full-dataset loads; <3s per screen | 🟡 | OData `$top`/`$skip` paging is in place; not independently measured |
+| Geocoding | Nominatim rate limit, User-Agent, `CustomerGeo` cache | ✅ | `srv/lib/geocode.js` — 1 req/sec throttle, descriptive `GEOCODE_USER_AGENT`, cached in `CustomerGeo` |
+| Performance | Server-side paging; no full-dataset loads; <3s per screen | ✅ | OData `$top`/`$skip` paging is in place; measured live against the real running server — SalesOrders list ~13ms, dashboard KPIs ~10–30ms (cached), cold (uncached) Northwind Products read ~1.6s (one remote round trip, then ~9ms cached), Customer Map ~0.4s — all well under 3s |
 | Errors | `req.error`/`req.reject` with proper HTTP codes; `cds.log`, not `console.log` | ✅ | |
 | Code quality | ESLint config committed and clean; no dead code | ✅ | `eslint.config.js`, `npm run lint` |
 | Git | Small, meaningful commits | 🟡 | The pre-existing `first commit` bundles all of Phases 1–2 in one commit (not rewritten — that would mean rewriting already-existing history); everything since is organized into focused, individually-reviewable commits |
@@ -479,9 +479,7 @@ _To be added — this environment has no browser access to capture them. See `da
 
 ## Known Limitations
 
-- **Map** (MAP-01 to MAP-04) and the **AI feature** (AI-01, AI-02) are not implemented yet — intentionally deferred to the last phase of work.
-- **Draft editing** (SO-08) is not implemented; orders are created/edited as active entities.
-- **Order delete** has no UI entry point yet, though the API permits it for SalesRep.
-- **Stock-exceeds-`UnitsInStock`** warning is computed server-side (`req.warn`) but not yet shown in the create-order UI.
+- **Draft editing** (SO-08, Should) is deliberately not implemented. `SalesOrders` already has a hand-built state machine (`submit`/`approve`/`cancel`/`createInvoice`/`sendInvoice`) and a tested create flow built around active entities; grafting `@odata.draft.enabled` on top is a real architectural change (draft-indicator UI, a `draftActivate` handshake, re-validating every action against draft semantics), not a metadata flag flip, and risks destabilizing a complete, tested feature set for a bonus requirement. A deliberate, scoped-out decision, not an oversight.
 - **DMS-06** (showing the `sdm` invoice store against a real SAP Document Management instance via `cds bind`) could not be completed — this assessment has no SAP BTP account. `npm run demo:hybrid` exercises the same code path against a mocked CMIS endpoint instead; see DECISIONS.md ADR 19.
-- The dashboard's rendered UI (VizFrame charts in particular) was fixed based on a real browser screenshot during development, but could not be independently re-verified in a browser from within this environment afterward.
+- **AI-01/AI-02** were verified against the real `proposeOrderFromText` HTTP endpoint (response shape, AI-02's no-key degradation, and a full extraction→Northwind-matching round trip against a mocked Gemini response) but not against the real Gemini API — this environment has no `GEMINI_API_KEY`. Add one to `.env` (see `.env.example`) to exercise the real extraction path.
+- The dashboard and customer map were visually verified in a real browser during development (including fixing a `layoutData` namespace bug and an `HBox`-vs-percentage-width sizing bug on the map — see DECISIONS.md ADR 23). The AI assistant dialog's rendering has only been verified at the API/data level, not visually in a browser.
