@@ -5,11 +5,15 @@ const LOG = cds.log('order-service');
 
 const { calculateItemNetAmount, calculateOrderTotals } = require('./lib/calculations');
 const { generateOrderNumber }                          = require('./lib/order-number');
-const { getCustomer, getProducts, withTimeout }        = require('./lib/northwind');
+const {
+  getCustomer, getProducts, withTimeout,
+  getAllCustomers, getAllProducts,
+}                                                       = require('./lib/northwind');
 const northwindCache                                   = require('./lib/northwind-cache');
 const { generateInvoicePdf }                           = require('./lib/pdf');
 const { sendInvoiceEmail }                             = require('./lib/mailer');
 const invoiceStore                                     = require('./lib/invoice-store');
+const ai                                               = require('./lib/ai');
 const {
   ORDER_STATUS,
   VALID_TRANSITIONS,
@@ -202,6 +206,30 @@ module.exports = class OrderService extends cds.ApplicationService {
       );
       if (order && order.status !== ORDER_STATUS.NEW) {
         return req.reject(403, `Cannot edit an order in '${order.status}' status. Only 'New' orders can be modified.`);
+      }
+    });
+
+    /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+     *  SALES ORDER — DELETE guard (SO-01)
+     * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+
+    // @restrict grants DELETE to SalesRep with no status condition — CAP's
+    // declarative @restrict can't express "only while New" (it has no access
+    // to the row being deleted), so that's enforced here instead, the same
+    // way the UPDATE guard above handles "only while New" for edits. Once an
+    // order has been submitted it's live in the approval/billing workflow;
+    // deleting it would also orphan any Invoice already pointing at it via
+    // `Invoices.order` (a plain Association, not owned by SalesOrders, so it
+    // is not cascade-deleted).
+    this.before('DELETE', SalesOrders, async (req) => {
+      const ID = req.params[0];
+      if (!ID) return;
+
+      const order = await db.run(
+        SELECT.one.from('orderhub.SalesOrders').columns('status').where({ ID })
+      );
+      if (order && order.status !== ORDER_STATUS.NEW) {
+        return req.reject(409, `Cannot delete an order in '${order.status}' status. Only 'New' orders can be deleted.`);
       }
     });
 
@@ -484,6 +512,71 @@ module.exports = class OrderService extends cds.ApplicationService {
       return db.run(SELECT.one.from('orderhub.Invoices').where({ ID: invoice.ID }));
     });
 
+    /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+     *  FUNCTION — proposeOrderFromText (AI-01, AI-02)
+     * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+
+    this.on('proposeOrderFromText', async (req) => {
+      // AI-02: the rest of the app works fully with no AI key configured —
+      // the UI disables the feature instead of showing an error.
+      if (!ai.isConfigured()) {
+        return { aiAvailable: false, customerHint: '', customerStatus: 'not_found', items: [], deliveryNote: '' };
+      }
+
+      const text = (req.data.text || '').trim();
+      if (!text) return req.reject(400, 'Please paste some text to extract an order from.');
+
+      let extraction;
+      try {
+        extraction = await ai.extractOrderFromText(text);
+      } catch (err) {
+        LOG.error('AI order extraction failed:', err.message);
+        return req.reject(err.status || 502, err.message);
+      }
+
+      // The model only ever proposes text hints — every customer and
+      // product is matched against live Northwind data here, server-side,
+      // before any of it is shown for the clerk to confirm (section 9:
+      // "every customer and product matched against Northwind before
+      // anything is saved").
+      let customers, products;
+      try {
+        [customers, products] = await Promise.all([
+          withTimeout(getAllCustomers(northwind), 'reading customers for AI matching'),
+          withTimeout(getAllProducts(northwind), 'reading products for AI matching'),
+        ]);
+      } catch (err) {
+        return req.reject(err.status || 502, err.message);
+      }
+
+      const customerMatch = matchEntity(extraction.customerHint, customers, 'CompanyName', 'CustomerID');
+      const items = (extraction.items || []).map((item) => {
+        const m = matchEntity(item.productHint, products, 'ProductName', 'ProductID');
+        const product = products.find((p) => p.ProductID === m.id);
+        return {
+          productHint: item.productHint,
+          quantity: item.quantity,
+          matchStatus: m.status,
+          productID: m.id,
+          productName: m.name,
+          unitPrice: product ? product.UnitPrice : null,
+          unitsInStock: product ? product.UnitsInStock : null,
+        };
+      });
+
+      LOG.info(`AI order proposal: customer ${customerMatch.status}, ${items.length} item(s)`);
+
+      return {
+        aiAvailable: true,
+        customerHint: extraction.customerHint || '',
+        customerStatus: customerMatch.status,
+        customerID: customerMatch.id,
+        customerName: customerMatch.name,
+        items,
+        deliveryNote: extraction.deliveryNote || '',
+      };
+    });
+
     /* ── finish initialisation ────────────────────────────────── */
     await super.init();
   }
@@ -512,4 +605,22 @@ function assertTransition(currentStatus, targetStatus, req) {
       `Cannot transition from '${currentStatus}' to '${targetStatus}'. Allowed: ${allowed.join(', ') || 'none'}.`
     );
   }
+}
+
+/**
+ * Match a free-text hint (from the AI assistant) against real Northwind
+ * records by a case-insensitive substring match on `nameField`. Never
+ * trusts the model's own idea of an ID — this is the only thing that
+ * decides whether a hint maps to a real customer/product (AI-01).
+ *
+ * @returns {{status: 'matched'|'ambiguous'|'not_found', id: *, name: string|null}}
+ */
+function matchEntity(hint, candidates, nameField, idField) {
+  const trimmed = (hint || '').trim().toLowerCase();
+  if (!trimmed) return { status: 'not_found', id: null, name: null };
+
+  const matches = candidates.filter((c) => (c[nameField] || '').toLowerCase().includes(trimmed));
+  if (matches.length === 0) return { status: 'not_found', id: null, name: null };
+  if (matches.length === 1) return { status: 'matched', id: matches[0][idField], name: matches[0][nameField] };
+  return { status: 'ambiguous', id: matches[0][idField], name: matches[0][nameField] };
 }

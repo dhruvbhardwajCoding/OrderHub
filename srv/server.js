@@ -1,4 +1,5 @@
 const cds = require('@sap/cds');
+const { isConfigured: aiConfigured } = require('./lib/ai');
 
 // Does `userDef.roles` include `role`? CAP's own auth middleware (whichever
 // kind is configured) mutates cds.env.requires.auth.users[*] in place the
@@ -49,7 +50,11 @@ cds.on('served', () => {
         SalesRep: hasRole(userDef, 'SalesRep'),
         SalesManager: hasRole(userDef, 'SalesManager'),
         BillingClerk: hasRole(userDef, 'BillingClerk')
-      }
+      },
+      // AI-02: the UI disables the AI assistant button (with a tooltip)
+      // instead of letting the user hit an error — checked once here
+      // rather than adding a dedicated OData round trip just for a flag.
+      aiAvailable: aiConfigured()
     });
   });
 });

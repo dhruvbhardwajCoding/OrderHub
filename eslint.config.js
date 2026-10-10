@@ -31,6 +31,7 @@ module.exports = [
         fetch: 'readonly',
         FormData: 'readonly',
         Blob: 'readonly',
+        AbortController: 'readonly',
         URL: 'readonly',
         setTimeout: 'readonly',
         clearTimeout: 'readonly',

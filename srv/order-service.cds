@@ -45,6 +45,40 @@ service OrderService @(path: '/odata/v4/order')
 
   entity SalesOrderItems as projection on orderhub.SalesOrderItems;
   entity Invoices as projection on orderhub.Invoices;
+
+  // ─── AI assistant (AI-01, AI-02) ──────────────────────────────
+  // "Order from text" (section 9, option A): paste a customer email,
+  // get a structured draft order matched against live Northwind data
+  // before anything is saved. Never called from the browser directly —
+  // the model only sees the pasted text, never Northwind data or keys.
+
+  type ProposedOrderItem {
+    productHint   : String;
+    quantity      : Integer;
+    matchStatus   : String enum { matched; ambiguous; not_found };
+    productID     : Integer;
+    productName   : String;
+    unitPrice     : Decimal(15,2);
+    unitsInStock  : Integer; // SO-09: lets the UI warn before the order is even saved
+  }
+
+  type ProposedOrder {
+    aiAvailable    : Boolean; // false if no AI key is configured (AI-02) — items/customer are empty in that case
+    customerHint   : String;
+    customerStatus : String enum { matched; ambiguous; not_found };
+    customerID     : String;
+    customerName   : String;
+    items          : array of ProposedOrderItem;
+    deliveryNote   : String;
+  }
+
+  // An action (POST body), not a function: the pasted text is free-form —
+  // potentially long, with arbitrary punctuation and line breaks — and
+  // OData functions take their parameters URL-encoded in the request path,
+  // which is the wrong fit here (same reason sendInvoice's `email` is an
+  // action parameter, not a function one).
+  @(requires: 'SalesRep')
+  action proposeOrderFromText(text: String) returns ProposedOrder;
 }
 
 // ─── Authorisation ───────────────────────────────────────────────

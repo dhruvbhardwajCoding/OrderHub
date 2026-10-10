@@ -14,21 +14,31 @@ const { calculateItemNetAmount, calculateOrderTotals } = require('../srv/lib/cal
 const { APPROVAL_THRESHOLD } = require('../srv/lib/constants');
 
 // Mock the Northwind helper functions so tests do not depend entirely on the live service
+const MOCK_CUSTOMERS = [
+  { CustomerID: 'ALFKI', CompanyName: 'Alfreds Futterkiste' },
+];
+const MOCK_PRODUCTS = [
+  { ProductID: 1, ProductName: 'Chai', UnitPrice: 18.00, UnitsInStock: 39, Discontinued: false },
+  { ProductID: 14, ProductName: 'Tofu', UnitPrice: 23.25, UnitsInStock: 35, Discontinued: false },
+  { ProductID: 5, ProductName: 'Chef Anton Cajun Seasoning', UnitPrice: 22.00, UnitsInStock: 53, Discontinued: true }
+];
+
 jest.mock('../srv/lib/northwind', () => ({
   getCustomer: jest.fn(async (srv, id) => {
     if (id === 'ALFKI') return { CustomerID: 'ALFKI', CompanyName: 'Alfreds Futterkiste' };
     return null;
   }),
-  getProducts: jest.fn(async (srv, ids) => {
-    const products = [
-      { ProductID: 1, ProductName: 'Chai', UnitPrice: 18.00, UnitsInStock: 39, Discontinued: false },
-      { ProductID: 14, ProductName: 'Tofu', UnitPrice: 23.25, UnitsInStock: 35, Discontinued: false },
-      { ProductID: 5, ProductName: 'Chef Anton Cajun Seasoning', UnitPrice: 22.00, UnitsInStock: 53, Discontinued: true }
-    ];
-    return products.filter(p => ids.includes(p.ProductID));
-  }),
+  getAllCustomers: jest.fn(async () => MOCK_CUSTOMERS),
+  getProducts: jest.fn(async (srv, ids) => MOCK_PRODUCTS.filter(p => ids.includes(p.ProductID))),
+  getAllProducts: jest.fn(async () => MOCK_PRODUCTS),
   withTimeout: jest.fn((promise) => promise)
 }));
+
+jest.mock('../srv/lib/ai', () => ({
+  isConfigured: jest.fn(() => false),
+  extractOrderFromText: jest.fn(),
+}));
+const mockAi = require('../srv/lib/ai');
 
 jest.mock('../srv/lib/pdf', () => ({
   generateInvoicePdf: jest.fn(async () => Buffer.from('mock pdf content'))
@@ -53,7 +63,7 @@ cds.env.requires.auth = {
     carol: { password: 'carol', roles: ['BillingClerk'] }
   }
 };
-const { GET, POST, PATCH } = cds.test(__dirname + '/..');
+const { GET, POST, PATCH, DELETE } = cds.test(__dirname + '/..');
 
 /* ═══════════════════════════════════════════════════════════════
  *  1. NORTHWIND READ OPERATIONS
@@ -373,6 +383,56 @@ describe('Status lifecycle — submit / approve / cancel', () => {
 });
 
 /* ═══════════════════════════════════════════════════════════════
+ *  5b. ORDER DELETION (SO-01)
+ * ═══════════════════════════════════════════════════════════════ */
+
+describe('Order deletion (SO-01)', () => {
+
+  let orderID;
+
+  beforeEach(async () => {
+    // quantity 300 → grossAmount > APPROVAL_THRESHOLD, so submit() leaves it
+    // 'Submitted' rather than auto-approving (matches the lifecycle tests above).
+    const { data } = await POST(`${SVC}/SalesOrders`, {
+      customerID: 'ALFKI',
+      items: [{ productID: 1, quantity: 300, discount: 0 }],
+    }, ALICE);
+    orderID = data.ID;
+  });
+
+  test('SalesRep can delete a New order', async () => {
+    const { status } = await DELETE(`${SVC}/SalesOrders(${orderID})`, ALICE);
+    expect(status).toBe(204);
+
+    const err = await GET(`${SVC}/SalesOrders(${orderID})`, ALICE).catch((e) => e);
+    expect(err.response?.status || err.status).toBe(404);
+  });
+
+  test('cannot delete a Submitted order', async () => {
+    await POST(`${SVC}/SalesOrders(${orderID})/OrderService.submit`, {}, ALICE);
+    const err = await DELETE(`${SVC}/SalesOrders(${orderID})`, ALICE).catch((e) => e);
+    expect(err.response?.status || err.status).toBe(409);
+  });
+
+  test('cannot delete an Approved order', async () => {
+    await POST(`${SVC}/SalesOrders(${orderID})/OrderService.submit`, {}, ALICE);
+    await POST(`${SVC}/SalesOrders(${orderID})/OrderService.approve`, {}, BOB);
+    const err = await DELETE(`${SVC}/SalesOrders(${orderID})`, ALICE).catch((e) => e);
+    expect(err.response?.status || err.status).toBe(409);
+  });
+
+  test('SalesManager cannot delete an order (not granted)', async () => {
+    const err = await DELETE(`${SVC}/SalesOrders(${orderID})`, BOB).catch((e) => e);
+    expect(err.response?.status || err.status).toBe(403);
+  });
+
+  test('BillingClerk cannot delete an order (not granted)', async () => {
+    const err = await DELETE(`${SVC}/SalesOrders(${orderID})`, CAROL).catch((e) => e);
+    expect(err.response?.status || err.status).toBe(403);
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════
  *  6. APPROVAL THRESHOLD
  * ═══════════════════════════════════════════════════════════════ */
 
@@ -587,8 +647,100 @@ describe('Billing Clerk - Invoice operations', () => {
   test('SalesRep cannot create or send invoices', async () => {
     let err = await POST(`${SVC}/SalesOrders(${orderID})/OrderService.createInvoice`, {}, ALICE).catch(e => e);
     expect(err.response?.status || err.status).toBe(403);
-    
+
     err = await POST(`${SVC}/SalesOrders(${orderID})/OrderService.sendInvoice`, {}, ALICE).catch(e => e);
+    expect(err.response?.status || err.status).toBe(403);
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════
+ *  11. AI ASSISTANT — proposeOrderFromText (AI-01, AI-02)
+ * ═══════════════════════════════════════════════════════════════ */
+
+describe('AI assistant — proposeOrderFromText', () => {
+  afterEach(() => {
+    mockAi.isConfigured.mockReset().mockReturnValue(false);
+    mockAi.extractOrderFromText.mockReset();
+  });
+
+  test('AI-02: with no key configured, returns aiAvailable:false without calling the model', async () => {
+    const { status, data } = await POST(`${SVC}/proposeOrderFromText`, { text: 'Please send 20 Chai to Alfreds' }, ALICE);
+    expect(status).toBe(200);
+    expect(data.aiAvailable).toBe(false);
+    expect(data.items).toEqual([]);
+    expect(mockAi.extractOrderFromText).not.toHaveBeenCalled();
+  });
+
+  test('matches a mentioned customer and product against live Northwind data', async () => {
+    mockAi.isConfigured.mockReturnValue(true);
+    mockAi.extractOrderFromText.mockResolvedValue({
+      customerHint: 'Alfreds',
+      items: [{ productHint: 'Chai', quantity: 20 }],
+      deliveryNote: 'delivery next week',
+    });
+
+    const { status, data } = await POST(`${SVC}/proposeOrderFromText`, { text: 'Please send 20 Chai to Alfreds, delivery next week' }, ALICE);
+
+    expect(status).toBe(200);
+    expect(data.aiAvailable).toBe(true);
+    expect(data.customerStatus).toBe('matched');
+    expect(data.customerID).toBe('ALFKI');
+    expect(data.items).toHaveLength(1);
+    expect(data.items[0].matchStatus).toBe('matched');
+    expect(data.items[0].productID).toBe(1);
+    expect(data.items[0].quantity).toBe(20);
+    expect(data.items[0].unitsInStock).toBe(39); // SO-09: carried through so the UI can warn before saving
+    expect(data.deliveryNote).toBe('delivery next week');
+  });
+
+  test('flags a product that does not exist in Northwind as not_found, without inventing an ID', async () => {
+    mockAi.isConfigured.mockReturnValue(true);
+    mockAi.extractOrderFromText.mockResolvedValue({
+      customerHint: 'Alfreds',
+      items: [{ productHint: 'Unobtainium Widget', quantity: 3 }],
+      deliveryNote: '',
+    });
+
+    const { data } = await POST(`${SVC}/proposeOrderFromText`, { text: 'Send 3 Unobtainium Widgets to Alfreds' }, ALICE);
+
+    expect(data.items[0].matchStatus).toBe('not_found');
+    expect(data.items[0].productID).toBeNull();
+  });
+
+  test('flags a customer mention that matches nothing in Northwind as not_found', async () => {
+    mockAi.isConfigured.mockReturnValue(true);
+    mockAi.extractOrderFromText.mockResolvedValue({
+      customerHint: 'Totally Fictional Company Inc',
+      items: [],
+      deliveryNote: '',
+    });
+
+    const { data } = await POST(`${SVC}/proposeOrderFromText`, { text: 'Order for Totally Fictional Company Inc' }, ALICE);
+
+    expect(data.customerStatus).toBe('not_found');
+    expect(data.customerID).toBeNull();
+  });
+
+  test('rejects empty text with a 400', async () => {
+    mockAi.isConfigured.mockReturnValue(true);
+    const err = await POST(`${SVC}/proposeOrderFromText`, { text: '   ' }, ALICE).catch(e => e);
+    expect(err.response?.status || err.status).toBe(400);
+    expect(mockAi.extractOrderFromText).not.toHaveBeenCalled();
+  });
+
+  test('surfaces an AI extraction failure as a clear error, not a crash', async () => {
+    mockAi.isConfigured.mockReturnValue(true);
+    mockAi.extractOrderFromText.mockRejectedValue(
+      Object.assign(new Error('The AI service is currently unavailable.'), { status: 502 })
+    );
+
+    const err = await POST(`${SVC}/proposeOrderFromText`, { text: 'Send 5 Chai to Alfreds' }, ALICE).catch(e => e);
+    expect(err.response?.status || err.status).toBe(502);
+  });
+
+  test('only SalesRep can use the AI assistant', async () => {
+    mockAi.isConfigured.mockReturnValue(true);
+    const err = await POST(`${SVC}/proposeOrderFromText`, { text: 'Send 5 Chai to Alfreds' }, BOB).catch(e => e);
     expect(err.response?.status || err.status).toBe(403);
   });
 });
