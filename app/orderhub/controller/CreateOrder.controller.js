@@ -4,11 +4,13 @@ sap.ui.define([
     "sap/ui/core/Fragment",
     "sap/m/MessageBox",
     "sap/m/MessageToast",
-    "sap/ui/core/BusyIndicator"
-], function (Controller, JSONModel, Fragment, MessageBox, MessageToast, BusyIndicator) {
+    "sap/ui/core/BusyIndicator",
+    "orderhub/model/formatter"
+], function (Controller, JSONModel, Fragment, MessageBox, MessageToast, BusyIndicator, formatter) {
     "use strict";
 
     return Controller.extend("orderhub.controller.CreateOrder", {
+        formatter: formatter,
 
         onInit: function () {
             var oRouter = this.getOwnerComponent().getRouter();
@@ -27,10 +29,20 @@ sap.ui.define([
         _onPatternMatched: function (oEvent) {
             var sCustomerID = oEvent.getParameter("arguments").customerID;
             var oOrderModel = this.getView().getModel("orderModel");
-            
-            // Reset items
-            oOrderModel.setProperty("/items", []);
-            
+
+            // AI assistant (AI-01/AI-02): a draft proposed from pasted email
+            // text is handed off here via a one-shot stash on the component,
+            // rather than a new backend endpoint — order creation still goes
+            // through the same /SalesOrders POST as a manually built order.
+            var oComponent = this.getOwnerComponent();
+            var oAiDraft = oComponent._aiDraftItems;
+            if (oAiDraft && oAiDraft.customerID === sCustomerID) {
+                delete oComponent._aiDraftItems;
+                oOrderModel.setProperty("/items", oAiDraft.items);
+            } else {
+                oOrderModel.setProperty("/items", []);
+            }
+
             var oModel = this.getView().getModel();
             var oContextBinding = oModel.bindContext("/Customers('" + sCustomerID + "')");
             oContextBinding.requestObject().then(function (oData) {
@@ -77,14 +89,16 @@ sap.ui.define([
                 var sProductID = oContext.getProperty("ProductID");
                 var sProductName = oContext.getProperty("ProductName");
                 var sUnitPrice = oContext.getProperty("UnitPrice");
+                var sUnitsInStock = oContext.getProperty("UnitsInStock");
 
                 var oOrderModel = this.getView().getModel("orderModel");
                 var aItems = oOrderModel.getProperty("/items");
-                
+
                 aItems.push({
                     productID: sProductID,
                     productName: sProductName,
                     unitPrice: sUnitPrice,
+                    unitsInStock: sUnitsInStock,
                     quantity: 1,
                     discount: 0
                 });

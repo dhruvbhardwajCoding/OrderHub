@@ -107,6 +107,7 @@
         <footer>
             <Bar>
                 <contentRight>
+                    <Button id="btnDelete" text="{i18n>deleteOrder}" type="Reject" visible="false" press=".onDelete" />
                     <Button id="btnSubmit" text="{i18n>submit}" type="Emphasized" visible="false" press=".onSubmit" />
                     <Button id="btnApprove" text="{i18n>approve}" type="Accept" visible="false" press=".onApprove" />
                     <Button id="btnCancel" text="{i18n>cancel}" type="Reject" visible="false" press=".onCancel" />

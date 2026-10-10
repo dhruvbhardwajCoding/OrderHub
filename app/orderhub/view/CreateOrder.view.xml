@@ -41,6 +41,9 @@
                         <Text text="{i18n>discount}" />
                     </Column>
                     <Column>
+                        <Text text="{i18n>stockColumn}" />
+                    </Column>
+                    <Column>
                         <Text text="{i18n>remove}" />
                     </Column>
                 </columns>
@@ -51,6 +54,11 @@
                             <ObjectNumber number="{orderModel>unitPrice}" />
                             <Input value="{orderModel>quantity}" type="Number" placeholder="Qty" />
                             <Input value="{orderModel>discount}" type="Number" placeholder="%" />
+                            <ObjectStatus
+                                visible="{parts: ['orderModel>quantity', 'orderModel>unitsInStock'], formatter: '.formatter.stockWarningVisible'}"
+                                icon="sap-icon://alert"
+                                state="Warning"
+                                text="{i18n>stockWarningShort}" />
                             <Button icon="sap-icon://delete" type="Reject" press=".onRemoveProduct" />
                         </cells>
                     </ColumnListItem>

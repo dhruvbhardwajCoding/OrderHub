@@ -24,6 +24,7 @@ sap.ui.define([
             var sOrderID = oEvent.getParameter("arguments").orderID;
 
             // Hide all buttons initially
+            this.byId("btnDelete").setVisible(false);
             this.byId("btnSubmit").setVisible(false);
             this.byId("btnApprove").setVisible(false);
             this.byId("btnCancel").setVisible(false);
@@ -69,8 +70,9 @@ sap.ui.define([
             var bIsSalesManager = oUserModel.getProperty("/roles/SalesManager") === true;
             var bIsBillingClerk = oUserModel.getProperty("/roles/BillingClerk") === true;
 
-            // Alice (SalesRep): Submit (when New) + Cancel (when New or Submitted)
+            // Alice (SalesRep): Delete (when New) + Submit (when New) + Cancel (when New or Submitted)
             // Bob (SalesManager): Approve (when Submitted) + Cancel (when New or Submitted)
+            this.byId("btnDelete").setVisible(sStatus === "New" && bIsSalesRep);
             this.byId("btnSubmit").setVisible(sStatus === "New" && bIsSalesRep);
             this.byId("btnApprove").setVisible(sStatus === "Submitted" && bIsSalesManager);
             this.byId("btnCancel").setVisible(
@@ -93,6 +95,27 @@ sap.ui.define([
             } else {
                 this.getOwnerComponent().getRouter().navTo("salesOrders", {}, true);
             }
+        },
+
+        onDelete: function () {
+            var that = this;
+            var oBundle = this.getView().getModel("i18n").getResourceBundle();
+            MessageBox.confirm(oBundle.getText("confirmDelete"), {
+                onClose: function (sAction) {
+                    if (sAction === MessageBox.Action.OK) {
+                        BusyIndicator.show(0);
+                        var oContext = that.getView().getBindingContext();
+                        oContext.delete().then(function () {
+                            BusyIndicator.hide();
+                            MessageToast.show(oBundle.getText("orderDeleted"));
+                            that.getOwnerComponent().getRouter().navTo("salesOrders", {}, true);
+                        }).catch(function (oError) {
+                            BusyIndicator.hide();
+                            MessageBox.error(oError.message || oBundle.getText("deleteFailed"));
+                        });
+                    }
+                }
+            });
         },
 
         onSubmit: function () {
