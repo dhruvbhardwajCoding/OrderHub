@@ -32,6 +32,7 @@ entity SalesOrders : cuid, managed {
   currency     : Currency;
   items        : Composition of many SalesOrderItems
                    on items.parent = $self;
+  invoice      : Association to one Invoices on invoice.order = $self;
 }
 
 /**
@@ -46,4 +47,18 @@ entity SalesOrderItems : cuid {
   quantity     : Integer       @mandatory;
   discount     : Decimal(5,2)  default 0;
   netAmount    : Decimal(15,2) @readonly;
+}
+
+/**
+ * Invoices — generated PDFs and email tracking.
+ * Associated 1:1 with SalesOrders.
+ */
+entity Invoices : cuid, managed {
+  invoiceNo   : String(20) @readonly;
+  order       : Association to SalesOrders;
+  content     : LargeBinary @Core.MediaType: 'application/pdf';
+  dmsObjectId : String(255);
+  sentTo      : String(255);
+  sentAt      : DateTime;
+  mailStatus  : String(20); // 'PENDING', 'SENT', 'FAILED'
 }

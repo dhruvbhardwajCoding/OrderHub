@@ -37,9 +37,14 @@ service OrderService @(path: '/odata/v4/order')
       @(requires: 'SalesManager')
       action approve() returns SalesOrders;
       action cancel()  returns SalesOrders;
+      @(requires: 'BillingClerk')
+      action createInvoice() returns Invoices;
+      @(requires: 'BillingClerk')
+      action sendInvoice(email: String(255)) returns Invoices;
     };
 
   entity SalesOrderItems as projection on orderhub.SalesOrderItems;
+  entity Invoices as projection on orderhub.Invoices;
 }
 
 // ─── Authorisation ───────────────────────────────────────────────
@@ -50,7 +55,7 @@ annotate OrderService.SalesOrders with @(restrict: [
     to: 'SalesRep' },
   { grant: ['READ', 'approve', 'cancel'],
     to: 'SalesManager' },
-  { grant: ['READ'],
+  { grant: ['READ', 'createInvoice', 'sendInvoice'],
     to: 'BillingClerk',
     where: 'status = ''Approved'' or status = ''Invoiced''' }
 ]);
@@ -62,6 +67,13 @@ annotate OrderService.SalesOrderItems with @(restrict: [
   { grant: ['READ', 'CREATE', 'UPDATE', 'DELETE'], to: 'SalesRep' },
   { grant: ['READ'],                                to: 'SalesManager' },
   { grant: ['READ'],                                to: 'BillingClerk' }
+]);
+
+// Invoices permissions
+annotate OrderService.Invoices with @(restrict: [
+  { grant: ['READ', 'CREATE', 'UPDATE', 'DELETE'], to: 'BillingClerk' },
+  { grant: ['READ'],                               to: 'SalesRep' },
+  { grant: ['READ'],                               to: 'SalesManager' }
 ]);
 
 // Prevent direct status / calculated-field mutation via PATCH
