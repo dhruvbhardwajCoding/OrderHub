@@ -23,7 +23,7 @@ sap.ui.define([
             this.setModel(oDeviceModel, "device");
 
             // set the user model
-            var oUserModel = new JSONModel({ user: "", roles: {} });
+            var oUserModel = new JSONModel({ user: "", roles: {}, aiAvailable: false });
             this.setModel(oUserModel, "user");
 
             // Fetch current user with credentials (enables Basic auth prompt)

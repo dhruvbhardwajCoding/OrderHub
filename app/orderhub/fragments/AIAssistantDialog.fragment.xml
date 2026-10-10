@@ -1,0 +1,89 @@
+<core:FragmentDefinition
+    xmlns="sap.m"
+    xmlns:core="sap.ui.core"
+    xmlns:f="sap.ui.layout.form">
+    <Dialog
+        id="aiAssistantDialog"
+        title="{i18n>aiAssistantTitle}"
+        contentWidth="38rem"
+        resizable="true"
+        verticalScrolling="true">
+        <content>
+            <VBox class="sapUiSmallMargin">
+                <Label text="{i18n>aiPasteLabel}" labelFor="aiEmailTextArea" />
+                <TextArea
+                    id="aiEmailTextArea"
+                    value="{ai>/text}"
+                    rows="6"
+                    width="100%"
+                    placeholder="{i18n>aiPastePlaceholder}" />
+
+                <Toolbar class="sapUiTinyMarginTop">
+                    <ToolbarSpacer />
+                    <Button text="{i18n>aiPropose}" type="Emphasized" press=".onAiPropose" />
+                </Toolbar>
+
+                <VBox visible="{= !!${ai>/proposed} }" class="sapUiSmallMarginTop">
+                    <Panel headerText="{i18n>aiCustomer}" class="sapUiTinyMarginBottom">
+                        <HBox alignItems="Center">
+                            <ObjectStatus
+                                icon="{parts:[{path:'ai>/proposed/customerStatus'}], formatter:'.formatter.matchStatusIcon'}"
+                                state="{parts:[{path:'ai>/proposed/customerStatus'}], formatter:'.formatter.matchStatusState'}"
+                                text="{ai>/proposed/customerStatusText}"
+                                class="sapUiTinyMarginEnd" />
+                            <Text text="{= ${ai>/proposed/customerName} || ${ai>/proposed/customerHint} || ${i18n>aiNoCustomerMentioned} }" />
+                        </HBox>
+                    </Panel>
+
+                    <Panel headerText="{i18n>aiOrderItems}">
+                        <Table items="{ai>/proposed/items}" noDataText="{i18n>aiNoItemsMentioned}">
+                            <columns>
+                                <Column><Text text="{i18n>aiColProduct}" /></Column>
+                                <Column><Text text="{i18n>aiColQuantity}" /></Column>
+                                <Column><Text text="{i18n>aiColMatch}" /></Column>
+                                <Column><Text text="{i18n>aiColMatchedProduct}" /></Column>
+                            </columns>
+                            <items>
+                                <ColumnListItem>
+                                    <cells>
+                                        <Text text="{ai>productHint}" />
+                                        <Text text="{ai>quantity}" />
+                                        <ObjectStatus
+                                            icon="{parts:[{path:'ai>matchStatus'}], formatter:'.formatter.matchStatusIcon'}"
+                                            state="{parts:[{path:'ai>matchStatus'}], formatter:'.formatter.matchStatusState'}"
+                                            text="{ai>matchStatusText}" />
+                                        <Text text="{ai>productName}" />
+                                    </cells>
+                                </ColumnListItem>
+                            </items>
+                        </Table>
+                    </Panel>
+
+                    <MessageStrip
+                        type="Information"
+                        showIcon="true"
+                        visible="{= !!${ai>/proposed/deliveryNote} }"
+                        text="{= ${i18n>aiDeliveryNote} + ': ' + ${ai>/proposed/deliveryNote} }"
+                        class="sapUiTinyMarginTop" />
+
+                    <MessageStrip
+                        type="Warning"
+                        showIcon="true"
+                        visible="{= ${ai>/proposed/customerStatus} === 'matched' &amp;&amp; !${ai>/proposed/canCreateDraft} }"
+                        text="{i18n>aiNoMatchedItems}"
+                        class="sapUiTinyMarginTop" />
+                </VBox>
+            </VBox>
+        </content>
+        <beginButton>
+            <Button
+                text="{i18n>aiCreateDraftOrder}"
+                type="Emphasized"
+                enabled="{= !!${ai>/proposed/canCreateDraft} }"
+                press=".onAiCreateDraftOrder" />
+        </beginButton>
+        <endButton>
+            <Button text="{i18n>aiDiscard}" press=".onAiDialogClose" />
+        </endButton>
+    </Dialog>
+</core:FragmentDefinition>

@@ -14,6 +14,18 @@
                     </layoutData>
                 </Button>
                 <Title text="{i18n>appTitle}" />
+                <ToolbarSpacer />
+                <Button
+                    icon="sap-icon://lightbulb"
+                    text="{i18n>aiAssistantTitle}"
+                    type="Transparent"
+                    enabled="{user>/aiAvailable}"
+                    tooltip="{= ${user>/aiAvailable} ? ${i18n>aiAssistantTooltip} : ${i18n>aiNotConfiguredTooltip} }"
+                    press=".onOpenAiAssistant">
+                    <layoutData>
+                        <OverflowToolbarLayoutData priority="NeverOverflow" />
+                    </layoutData>
+                </Button>
             </tnt:ToolHeader>
         </tnt:header>
         <tnt:sideContent>
