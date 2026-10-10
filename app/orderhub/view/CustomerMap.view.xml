@@ -2,51 +2,78 @@
     controllerName="orderhub.controller.CustomerMap"
     xmlns:mvc="sap.ui.core.mvc"
     xmlns="sap.m"
-    xmlns:core="sap.ui.core">
-    <Page id="customerPage" title="{i18n>customerMapTitle}" showNavButton="false" enableScrolling="false">
-        <content>
-            <SplitContainer id="splitContainer" mode="ShowHideMode">
-                <masterPages>
-                    <Page title="{i18n>customersTitle}" enableScrolling="true">
-                        <subHeader>
-                            <Toolbar>
-                                <SearchField liveChange=".onSearchCustomers" placeholder="Search customers..." width="100%"/>
-                            </Toolbar>
-                        </subHeader>
-                        <content>
-                            <List id="customerList"
-                                  mode="SingleSelectMaster"
-                                  selectionChange=".onCustomerSelect"
-                                  noDataText="Loading customers..."
-                                  growing="true"
-                                  growingThreshold="50">
-                                <items>
-                                    <StandardListItem
-                                        title="{CompanyName}"
-                                        description="{City}, {Country}"
-                                        icon="sap-icon://customer"
-                                        type="Active"/>
-                                </items>
-                            </List>
-                        </content>
-                    </Page>
-                </masterPages>
-                <detailPages>
-                    <Page id="detailPage" title="Map View" enableScrolling="false">
-                        <content>
-                            <core:HTML id="placeholderHtml" content="&lt;div style='width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:#f0f0f0;color:#999;'&gt;Click a customer to see location&lt;/div&gt;" sanitizeContent="false" />
-                        </content>
-                        <footer>
-                            <OverflowToolbar>
-                                <ToolbarSpacer/>
-                                <Text text="© OpenStreetMap contributors"/>
-                                <ToolbarSpacer/>
-                                <Button id="btnViewDetails" text="View Details" type="Emphasized" enabled="{= ${customers>/selectedCustomerID} ? true : false }" press=".onViewCustomerDetails" />
-                            </OverflowToolbar>
-                        </footer>
-                    </Page>
-                </detailPages>
-            </SplitContainer>
-        </content>
-    </Page>
+    xmlns:f="sap.f"
+    xmlns:core="sap.ui.core"
+    xmlns:layout="sap.ui.layout"
+    xmlns:custom="orderhub.control">
+    <f:DynamicPage id="dynamicPage" headerExpanded="true" busy="{map>/busy}">
+        <f:title>
+            <f:DynamicPageTitle>
+                <f:heading>
+                    <Title text="{i18n>customerMapTitle}" />
+                </f:heading>
+            </f:DynamicPageTitle>
+        </f:title>
+        <f:header>
+            <f:DynamicPageHeader pinnable="true">
+                <OverflowToolbar>
+                    <SearchField id="searchField" placeholder="{i18n>searchCompanyOrCity}" width="16rem" liveChange=".onFilterChange" />
+                    <Label text="{i18n>country}" labelFor="countrySelect" />
+                    <Select id="countrySelect" change=".onFilterChange" width="10rem">
+                        <core:Item key="" text="{i18n>allCountries}" />
+                    </Select>
+                    <Label text="{i18n>revenueBand}" labelFor="bandSelect" />
+                    <Select id="bandSelect" change=".onFilterChange" width="10rem">
+                        <core:Item key="" text="{i18n>allBands}" />
+                        <core:Item key="High" text="{i18n>bandHigh}" />
+                        <core:Item key="Medium" text="{i18n>bandMedium}" />
+                        <core:Item key="Low" text="{i18n>bandLow}" />
+                    </Select>
+                    <ToolbarSpacer />
+                    <Button text="{i18n>go}" type="Emphasized" press=".onFilterChange" />
+                </OverflowToolbar>
+            </f:DynamicPageHeader>
+        </f:header>
+        <f:content>
+            <layout:Grid defaultSpan="L12 M12 S12" width="100%">
+                <VBox class="sapUiResponsiveMargin">
+                    <layoutData>
+                        <layout:GridData span="L9 M8 S12" />
+                    </layoutData>
+                    <custom:LeafletMap id="map" width="100%" height="600px" spotPress=".onSpotPress" />
+                </VBox>
+                <VBox class="sapUiSmallMarginTop">
+                    <layoutData>
+                        <layout:GridData span="L3 M4 S12" />
+                    </layoutData>
+                    <Title text="{parts: ['i18n>inView', 'map>/visibleCount'], formatter: '.formatter.inViewTitle'}" level="H4" class="sapUiTinyMarginBottom" />
+                    <List id="customerList" items="{map>/customers}" mode="None" growing="true" growingThreshold="50">
+                        <items>
+                            <StandardListItem
+                                title="{map>customerName}"
+                                description="{map>city}, {map>country}"
+                                info="{map>revenueBand}"
+                                type="Active"
+                                press=".onListItemPress" />
+                        </items>
+                        <noData>
+                            <Text text="{i18n>noCustomersInView}" />
+                        </noData>
+                    </List>
+                </VBox>
+            </layout:Grid>
+        </f:content>
+        <f:footer>
+            <OverflowToolbar>
+                <core:Icon src="sap-icon://circle-task-2" color="#D04040" class="sapUiTinyMarginEnd" />
+                <Text text="{i18n>bandHigh}" class="sapUiSmallMarginEnd" />
+                <core:Icon src="sap-icon://circle-task-2" color="#E9730C" class="sapUiTinyMarginEnd" />
+                <Text text="{i18n>bandMedium}" class="sapUiSmallMarginEnd" />
+                <core:Icon src="sap-icon://circle-task-2" color="#0854A0" class="sapUiTinyMarginEnd" />
+                <Text text="{i18n>bandLow}" />
+                <ToolbarSpacer />
+                <Text text="{i18n>osmAttribution}" />
+            </OverflowToolbar>
+        </f:footer>
+    </f:DynamicPage>
 </mvc:View>

@@ -81,6 +81,40 @@ sap.ui.define([], function () {
                 default:
                     return "None";
             }
+        },
+
+        inViewTitle: function (sTemplate, iCount) {
+            return (sTemplate || "In view ({0})").replace("{0}", iCount != null ? iCount : 0);
+        },
+
+        matchStatusState: function (sStatus) {
+            switch (sStatus) {
+                case "matched":
+                    return "Success";
+                case "ambiguous":
+                    return "Warning";
+                case "not_found":
+                    return "Error";
+                default:
+                    return "None";
+            }
+        },
+
+        stockWarningVisible: function (iQuantity, iUnitsInStock) {
+            return iUnitsInStock != null && Number(iQuantity) > Number(iUnitsInStock);
+        },
+
+        matchStatusIcon: function (sStatus) {
+            switch (sStatus) {
+                case "matched":
+                    return "sap-icon://accept";
+                case "ambiguous":
+                    return "sap-icon://alert";
+                case "not_found":
+                    return "sap-icon://decline";
+                default:
+                    return "sap-icon://question-mark";
+            }
         }
     };
 });

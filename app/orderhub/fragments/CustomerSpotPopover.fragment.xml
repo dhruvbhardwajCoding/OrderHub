@@ -1,0 +1,20 @@
+<core:FragmentDefinition
+    xmlns="sap.m"
+    xmlns:core="sap.ui.core">
+    <ResponsivePopover id="spotPopover" title="{spot>customerName}" placement="Auto" contentWidth="20rem">
+        <content>
+            <VBox class="sapUiSmallMargin">
+                <Text text="{spot>city}, {spot>country}" class="sapUiTinyMarginBottom" />
+                <ObjectStatus title="{i18n>colOrders}" text="{spot>orderCount}" />
+                <ObjectStatus title="{i18n>colRevenue}" text="{spot>revenue}" />
+            </VBox>
+        </content>
+        <footer>
+            <OverflowToolbar>
+                <ToolbarSpacer />
+                <Button text="{i18n>newOrder}" press=".onNewOrderFromPopover" />
+                <Button text="{i18n>openCustomer}" type="Emphasized" press=".onOpenCustomerFromPopover" />
+            </OverflowToolbar>
+        </footer>
+    </ResponsivePopover>
+</core:FragmentDefinition>

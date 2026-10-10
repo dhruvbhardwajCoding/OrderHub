@@ -4,6 +4,14 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Northwind Order Hub</title>
+    <!-- Leaflet: wrapped by our own UI5 control (app/orderhub/control/LeafletMap.js) per
+         section 7's accepted sap.ui.mdc.Geomap fallback #2 — "your own UI5 control ...
+         that wraps a map library". Loaded before the UI5 bootstrap so the global `L` is
+         ready by the time the control first renders. -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
     <script id="sap-ui-bootstrap"
         src="https://sapui5.hana.ondemand.com/1.142.0/resources/sap-ui-core.js"
         data-sap-ui-theme="sap_horizon"
