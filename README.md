@@ -21,8 +21,12 @@ A modern SAP Cloud Application Programming Model (CAP) backend service for manag
 - [API Endpoints](#api-endpoints)
 - [Example Requests](#example-requests)
 - [Running Automated Tests](#running-automated-tests)
+- [Invoice Storage: Local vs. SAP Document Management](#invoice-storage-local-vs-sap-document-management)
 - [Project Structure](#project-structure)
 - [Phase Roadmap](#phase-roadmap)
+- [Requirement Checklist](#requirement-checklist)
+- [Screenshots](#screenshots)
+- [Known Limitations](#known-limitations)
 
 ---
 
@@ -154,7 +158,7 @@ The service enforces authentication and role-based permissions (`auth: mocked` m
 | :--- | :--- | :--- | :--- |
 | **`alice`** | `alice` | `SalesRep` | **Full Sales Orders Access**: Create, Read, Update, Delete orders; Submit orders for approval. |
 | **`bob`** | `bob` | `SalesManager` | **Management & Approval**: Read all orders; Approve submitted orders; Cancel orders. Cannot create orders. |
-| **`carol`** | `carol` | `BillingClerk` | **Read-Only / Accounting**: Read all orders and items. Reserved for Phase 3 invoicing workflows. |
+| **`carol`** | `carol` | `BillingClerk` | **Billing**: Read Approved/Invoiced orders; create invoices (`createInvoice`) and send them by email (`sendInvoice`). |
 
 ---
 
@@ -291,6 +295,31 @@ npm test
 - **Status Lifecycle**: Tests permitted transitions and enforces rejection of illegal status hops.
 - **Approval Threshold**: Confirms behavior for high-value orders exceeding threshold (`> 5000`).
 - **Role-Based Security**: Confirms 403 Forbidden enforcement across `SalesRep`, `SalesManager`, `BillingClerk`, and 401 Unauthorized for unauthenticated callers.
+- **Invoicing & Email**: `createInvoice`/`sendInvoice` lifecycle, the `<customerID>@example.test` recipient override, and the FAILED/SENT `mailStatus` tracking.
+- **Invoice Storage** (`test/sdm-client.test.js`, `test/invoice-store.test.js`): the CMIS Browser Binding client (folder creation, document upload with DMS-04 metadata, token caching, DMS-05 unreachable handling) and the `local`/`sdm` dispatch facade, all against a mocked `fetch` — see [Invoice Storage](#invoice-storage-local-vs-sap-document-management) below.
+
+---
+
+## Invoice Storage: Local vs. SAP Document Management
+
+Invoice PDFs are stored behind one interface, `srv/lib/invoice-store.js`, with two implementations (DMS-01):
+
+| Mode | When | Where the PDF lives |
+|------|------|----------------------|
+| `local` (default) | `cds watch` / `npm start` | `Invoices.content` in SQLite |
+| `sdm` | `cds watch --profile hybrid` | SAP Document Management, Integration Option, at `/invoices/<year>/<invoiceNo>.pdf`; only the CMIS object id (`Invoices.dmsObjectId`) is kept locally |
+
+The switch is entirely config-driven (`cds.requires.invoiceStore.kind` in `package.json`) — no code changes. `sdm` mode talks to Document Management over its CMIS Browser Binding REST API (`srv/lib/sdm-client.js`), authenticating via OAuth2 client-credentials from `cds.requires.sdm.credentials` (a Document Management, Integration Option service key — see `.env.example` for the env var names, or use `cds bind`).
+
+**This assessment has no SAP BTP account**, so `sdm` mode can't be demoed against a real instance (DMS-06 is the one item explicitly scoped out by section 8.1's "Access" note). Instead:
+
+```bash
+npm run demo:hybrid
+```
+
+runs the real server in `sdm` mode against a mocked CMIS endpoint (`test/fixtures/mock-sdm-fetch.js`) — folder creation, upload with the DMS-04 metadata, and the `GET /Invoices(ID)/content` lazy-backfill-from-DMS path all run for real, end-to-end, over HTTP. See `DECISIONS.md` ADR 19 for the full design (including why `GET .../content` caches DMS-fetched bytes back into SQLite after the first read, and the `@cap-js/sqlite` LargeBinary-column quirk this work uncovered and fixed).
+
+If Document Management is unreachable, `createInvoice` is rejected and the order is **not** marked `Invoiced` (DMS-05) — the clerk sees a clear error and can retry.
 
 ---
 
@@ -303,12 +332,13 @@ orderHub/
 ├── README.md                     # Project documentation (this file)
 ├── DECISIONS.md                  # Architectural decisions log
 ├── AI_USAGE.md                   # AI tooling and implementation disclosures
-├── app/                          # UI assets (target directory for Phase 2 SAPUI5)
+├── app/                          # SAPUI5 frontend (orderhub/)
 ├── db/
-│   └── schema.cds                # CDS domain model: SalesOrders & SalesOrderItems
+│   └── schema.cds                # CDS domain model: SalesOrders, SalesOrderItems, Invoices
 ├── srv/
 │   ├── order-service.cds         # OData V4 service definition and RBAC annotations
 │   ├── order-service.js          # Event handlers, action hooks, and validation logic
+│   ├── server.js                 # Custom bootstrap: /user-api/currentUser for the UI's role model
 │   ├── external/
 │   │   ├── northwind-metadata.cds# CDS projection model for Northwind OData service
 │   │   ├── northwind-metadata.xml# Northwind EDMX schema definition
@@ -322,9 +352,17 @@ orderHub/
 │       ├── calculations.js       # Line item and order totals computation
 │       ├── constants.js          # Business rules, thresholds, and transition states
 │       ├── northwind.js          # Remote Northwind lookup helper routines
-│       └── order-number.js       # Sequential SO-YYYY-NNNNN number generator
+│       ├── order-number.js       # Sequential SO-YYYY-NNNNN number generator
+│       ├── pdf.js                # Invoice PDF rendering (pdfmake)
+│       ├── mailer.js             # Invoice email dispatch (nodemailer)
+│       ├── invoice-store.js      # local/sdm storage facade (DMS-01)
+│       └── sdm-client.js         # CMIS Browser Binding REST client (DMS-02)
 └── test/
-    └── order-service.test.js     # Comprehensive Jest test suite
+    ├── order-service.test.js     # Main Jest integration suite
+    ├── sdm-client.test.js        # CMIS client unit tests (mocked fetch)
+    ├── invoice-store.test.js     # invoice-store facade unit tests
+    └── fixtures/
+        └── mock-sdm-fetch.js     # fetch-level CMIS mock for `npm run demo:hybrid`
 ```
 
 ---
@@ -340,11 +378,110 @@ orderHub/
   - [x] Lifecycle state transitions via bound actions (`submit`, `approve`, `cancel`)
   - [x] Role-based access control (SalesRep, SalesManager, BillingClerk)
   - [x] Automated test suite with mocked in-memory database and test fixtures
-- [ ] **Phase 2: SAPUI5 Application & Map Visualizations**
-  - [ ] SAPUI5 frontend (List Report & Object Page)
-  - [ ] Leaflet / OpenStreetMap customer location visualization
-  - [ ] Draft enablement (`@odata.draft.enabled`)
-- [ ] **Phase 3: Invoicing, Communications & AI Capabilities**
-  - [ ] PDF invoice generation with Billing Clerk role actions
-  - [ ] Automated email notification dispatching
-  - [ ] AI integration (Order Assistant / Sales Q&A / Invoice Email Writer)
+  - [x] Northwind call timeout (MD-04) and in-memory master-data cache (MD-05) — see `srv/lib/northwind.js` / `northwind-cache.js`
+- [x] **Phase 2: SAPUI5 Application** (map visualization and `@odata.draft.enabled` still pending)
+  - [x] SAPUI5 frontend: dashboard, customer map/list, product list, sales order list and object page
+  - [x] Role-aware action buttons (submit/approve/cancel/createInvoice/sendInvoice) driven by `/user-api/currentUser`
+  - [x] Dashboard KPI tiles, revenue-by-country/category charts and a top-5-customers table, all server-aggregated via `AnalyticsService` (AN-01, AN-02, AN-03) — see `srv/analytics-service.cds`/`.js`
+  - [ ] OpenStreetMap-based customer map (`sap.ui.mdc.Geomap` or an approved fallback) — not started
+  - [ ] Draft enablement (`@odata.draft.enabled`) — not started
+- [x] **Phase 3: Invoicing & Communications** (AI capabilities still pending)
+  - [x] PDF invoice generation (`pdfmake`) with Bill-To/Seller blocks, line items, totals, due date and page footer
+  - [x] Invoice storage behind `local`/`sdm` (SAP Document Management, Integration Option) — see [Invoice Storage](#invoice-storage-local-vs-sap-document-management)
+  - [x] Email dispatch (`nodemailer`) with a review-before-send dialog and FAILED/SENT tracking
+  - [ ] AI integration (Order Assistant / Sales Q&A / Invoice Email Writer) — intentionally deferred to last
+
+---
+
+## Requirement Checklist
+
+Status against the assessment brief's requirement IDs (section 5). ✅ done · 🟡 partial · ⬜ not done.
+
+### Master data (Northwind)
+
+| ID | Requirement | Status | Note |
+|---|---|---|---|
+| MD-01 | `cds import`, registered under `cds.requires` | ✅ | `srv/external/northwind-metadata.cds`, `package.json` |
+| MD-02 | Customers/Products/Categories/Suppliers/Shippers exposed read-only | ✅ | |
+| MD-03 | `$filter`/`$search`/`$orderby`/`$top`/`$skip` passed through to Northwind | ✅ | A CAP 8.9 parser quirk silently dropped `$filter`/`$search` for these entities — found and fixed; see DECISIONS.md ADR 20 |
+| MD-04 | Northwind slow/down: timeout, readable error, no crash | ✅ | `srv/lib/northwind.js`, `NORTHWIND_TIMEOUT_MS` |
+| MD-05 (Should) | Cache master-data reads for a configurable time | ✅ | `srv/lib/northwind-cache.js`, `NORTHWIND_CACHE_TTL_MS` |
+
+### Sales orders (SQLite)
+
+| ID | Requirement | Status | Note |
+|---|---|---|---|
+| SO-01 | Create/edit/list/delete orders with items | 🟡 | Create/edit/list done; `DELETE` is permitted for SalesRep at the API level but no UI delete button exists yet |
+| SO-02 | Store Northwind keys + snapshot name/price | ✅ | |
+| SO-03 | Server-side validation (customer/product exist, qty 1–999, discount 0–25%, not discontinued) | ✅ | |
+| SO-04 | Server-side net/tax/gross; client never sends totals | ✅ | |
+| SO-05 | Server-generated order number `SO-YYYY-NNNNN` | ✅ | |
+| SO-06 | Status changes only through bound actions | ✅ | `status` is `@readonly`; a direct `PATCH` is rejected (tested) |
+| SO-07 | Orders over 5,000 need manager approval before invoicing | ✅ | |
+| SO-08 (Should) | Draft editing (`@odata.draft.enabled`) | ⬜ | Not started |
+| SO-09 (Should) | Warn when quantity exceeds `UnitsInStock` | 🟡 | Server emits the warning (`req.warn`, tested); not yet surfaced in the UI |
+
+### Map
+
+| ID | Requirement | Status | Note |
+|---|---|---|---|
+| MAP-01 | Customers as spots on an OpenStreetMap-based map built with UI5 controls | ⬜ | Current `CustomerMap` view embeds a raw OSM iframe — doesn't meet "your own UI5 control with properties/aggregations/a renderer"; intentionally deferred and will be rebuilt |
+| MAP-02 | Geocode once, cache in SQLite | ⬜ | No `CustomerGeo` entity yet |
+| MAP-03 | Click a spot → popover with name/city/order count, link to customer page | ⬜ | |
+| MAP-04 (Should) | Filter by country, colour by revenue band | ⬜ | |
+
+### Analytics
+
+| ID | Requirement | Status | Note |
+|---|---|---|---|
+| AN-01 | KPI tiles: order count, revenue, open approvals, invoices sent | ✅ | `AnalyticsService.getKPIs()`, server-aggregated |
+| AN-02 | 2+ charts (e.g. revenue by country, revenue by category) | ✅ | `sap.viz` VizFrame bar + donut, both server-aggregated |
+| AN-03 (Should) | Top 5 customers table with drill-down | ✅ | Row press navigates to the customer |
+
+### Invoice and email
+
+| ID | Requirement | Status | Note |
+|---|---|---|---|
+| INV-01 | `createInvoice` bound action on Approved orders, `pdfmake` | ✅ | |
+| INV-02 | Stored through the invoice store (local/SDM), exposed as a media stream | ✅ | `srv/lib/invoice-store.js`; see [Invoice Storage](#invoice-storage-local-vs-sap-document-management) |
+| INV-03 | Email the PDF as an attachment; record recipient/timestamp/status | ✅ | |
+| INV-04 (Should) | Resend action, clear error on failure | ✅ | `sendInvoice` is idempotent/resend-safe; failures set `mailStatus: 'FAILED'` without rolling back the invoice |
+
+### AI
+
+| ID | Requirement | Status | Note |
+|---|---|---|---|
+| AI-01 | One AI feature wired through a CAP action/function | ⬜ | Intentionally deferred to last |
+| AI-02 | App works fully with no AI key configured | ⬜ | N/A until AI-01 exists |
+
+### Non-functional (section 10)
+
+| Area | Requirement | Status | Note |
+|---|---|---|---|
+| Setup | `git clone`, `npm install`, copy `.env.example`, `cds watch` starts it, `npm test` runs all tests | ✅ | Not independently re-verified from a fresh clone in this session |
+| Security | Mocked auth, 3 users/roles, `@requires`/`@restrict` | ✅ | `kind: 'mocked'` (see DECISIONS.md ADR 14 for why `kind: 'dummy'` doesn't work) |
+| Secrets | No keys/passwords/tokens in the repo or its history | ✅ | All via env vars, documented in `.env.example` |
+| Tests | 10+ `cds.test` tests across the listed categories, incl. PDF bytes starting with `%PDF` | ✅ | 90 tests; `test/pdf.test.js` checks the literal `%PDF` requirement against the real, unmocked generator |
+| Offline tests | No real Northwind/LLM/Document Management calls in tests | ✅ | `[test]` profile + CSV fixtures for Northwind; `sdm-client`/`pdf` mocked where needed |
+| Geocoding | Nominatim rate limit, User-Agent, `CustomerGeo` cache | ⬜ | Not started (part of Map) |
+| Performance | Server-side paging; no full-dataset loads; <3s per screen | 🟡 | OData `$top`/`$skip` paging is in place; not independently measured |
+| Errors | `req.error`/`req.reject` with proper HTTP codes; `cds.log`, not `console.log` | ✅ | |
+| Code quality | ESLint config committed and clean; no dead code | ✅ | `eslint.config.js`, `npm run lint` |
+| Git | Small, meaningful commits | 🟡 | The pre-existing `first commit` bundles all of Phases 1–2 in one commit (not rewritten — that would mean rewriting already-existing history); everything since is organized into focused, individually-reviewable commits |
+
+---
+
+## Screenshots
+
+_To be added — this environment has no browser access to capture them. See `dashboard.png` (shared during development) for the dashboard; the remaining screens (customer map, customer detail, products, sales orders list, sales order object page, create order) still need screenshots before submission._
+
+---
+
+## Known Limitations
+
+- **Map** (MAP-01 to MAP-04) and the **AI feature** (AI-01, AI-02) are not implemented yet — intentionally deferred to the last phase of work.
+- **Draft editing** (SO-08) is not implemented; orders are created/edited as active entities.
+- **Order delete** has no UI entry point yet, though the API permits it for SalesRep.
+- **Stock-exceeds-`UnitsInStock`** warning is computed server-side (`req.warn`) but not yet shown in the create-order UI.
+- **DMS-06** (showing the `sdm` invoice store against a real SAP Document Management instance via `cds bind`) could not be completed — this assessment has no SAP BTP account. `npm run demo:hybrid` exercises the same code path against a mocked CMIS endpoint instead; see DECISIONS.md ADR 19.
+- The dashboard's rendered UI (VizFrame charts in particular) was fixed based on a real browser screenshot during development, but could not be independently re-verified in a browser from within this environment afterward.
