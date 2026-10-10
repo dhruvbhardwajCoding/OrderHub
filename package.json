@@ -51,6 +51,23 @@
           }
         }
       },
+      "invoiceStore": {
+        "kind": "local",
+        "[hybrid]": {
+          "kind": "sdm"
+        }
+      },
+      "sdm": {
+        "credentials": {
+          "url": "",
+          "repositoryId": "",
+          "uaa": {
+            "url": "",
+            "clientid": "",
+            "clientsecret": ""
+          }
+        }
+      },
       "auth": {
         "kind": "mocked",
         "users": {
