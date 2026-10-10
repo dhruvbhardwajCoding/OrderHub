@@ -3,28 +3,101 @@
     xmlns:mvc="sap.ui.core.mvc"
     xmlns="sap.m"
     xmlns:core="sap.ui.core"
-    xmlns:layout="sap.ui.layout">
+    xmlns:layout="sap.ui.layout"
+    xmlns:viz="sap.viz.ui5.controls"
+    xmlns:vizData="sap.viz.ui5.data"
+    xmlns:vizFeeds="sap.viz.ui5.controls.common.feeds">
     <Page title="{i18n>dashboardTitle}" showNavButton="false">
         <content>
-            <Panel headerText="{i18n>overviewHeader}">
+            <Panel headerText="{i18n>overviewHeader}" busy="{dashboard>/busy}">
                 <HBox wrap="Wrap" fitContainer="true" renderType="Bare">
-                    <GenericTile header="{i18n>totalOrdersHeader}" press="onOrderPress">
+                    <GenericTile header="{i18n>totalOrdersHeader}" press="onOrderPress" class="sapUiTinyMarginEnd sapUiTinyMarginBottom">
                         <TileContent>
-                            <NumericContent value="{dashboard>/totalOrders}" />
+                            <NumericContent value="{dashboard>/orderCount}" />
                         </TileContent>
                     </GenericTile>
-                    <GenericTile header="{i18n>pendingApprovalsHeader}">
+                    <GenericTile header="{i18n>totalRevenueHeader}" class="sapUiTinyMarginEnd sapUiTinyMarginBottom">
                         <TileContent>
-                            <NumericContent value="{dashboard>/pendingApprovals}" />
+                            <NumericContent value="{dashboard>/revenue}" withMargin="false" />
                         </TileContent>
                     </GenericTile>
-                    <GenericTile header="{i18n>totalRevenueHeader}">
+                    <GenericTile header="{i18n>pendingApprovalsHeader}" class="sapUiTinyMarginEnd sapUiTinyMarginBottom">
                         <TileContent>
-                            <NumericContent value="{dashboard>/totalRevenue}" />
+                            <NumericContent value="{dashboard>/openApprovals}" valueColor="Critical" />
+                        </TileContent>
+                    </GenericTile>
+                    <GenericTile header="{i18n>invoicesSentHeader}" class="sapUiTinyMarginEnd sapUiTinyMarginBottom">
+                        <TileContent>
+                            <NumericContent value="{dashboard>/invoicesSent}" valueColor="Good" />
                         </TileContent>
                     </GenericTile>
                 </HBox>
             </Panel>
+
+            <layout:Grid defaultSpan="L6 M12 S12" width="100%">
+                <Panel headerText="{i18n>revenueByCountryHeader}" class="sapUiResponsiveMargin">
+                    <viz:VizFrame id="revenueByCountryChart" uiConfig="{applicationSet:'fiori'}" height="300px" width="100%" vizType="bar">
+                        <viz:dataset>
+                            <vizData:FlattenedDataset data="{dashboard>/revenueByCountry}">
+                                <vizData:dimensions>
+                                    <vizData:DimensionDefinition name="Country" value="{dashboard>country}" />
+                                </vizData:dimensions>
+                                <vizData:measures>
+                                    <vizData:MeasureDefinition name="Revenue" value="{dashboard>revenue}" />
+                                </vizData:measures>
+                            </vizData:FlattenedDataset>
+                        </viz:dataset>
+                        <viz:feeds>
+                            <vizFeeds:FeedItem uid="valueAxis" type="Measure" values="Revenue" />
+                            <vizFeeds:FeedItem uid="categoryAxis" type="Dimension" values="Country" />
+                        </viz:feeds>
+                    </viz:VizFrame>
+                </Panel>
+
+                <Panel headerText="{i18n>revenueByCategoryHeader}" class="sapUiResponsiveMargin">
+                    <viz:VizFrame id="revenueByCategoryChart" uiConfig="{applicationSet:'fiori'}" height="300px" width="100%" vizType="donut">
+                        <viz:dataset>
+                            <vizData:FlattenedDataset data="{dashboard>/revenueByCategory}">
+                                <vizData:dimensions>
+                                    <vizData:DimensionDefinition name="Category" value="{dashboard>category}" />
+                                </vizData:dimensions>
+                                <vizData:measures>
+                                    <vizData:MeasureDefinition name="Revenue" value="{dashboard>revenue}" />
+                                </vizData:measures>
+                            </vizData:FlattenedDataset>
+                        </viz:dataset>
+                        <viz:feeds>
+                            <vizFeeds:FeedItem uid="size" type="Measure" values="Revenue" />
+                            <vizFeeds:FeedItem uid="color" type="Dimension" values="Category" />
+                        </viz:feeds>
+                    </viz:VizFrame>
+                </Panel>
+            </layout:Grid>
+
+            <Panel headerText="{i18n>topCustomersHeader}">
+                <Table items="{dashboard>/topCustomers}">
+                    <columns>
+                        <Column><Text text="{i18n>colCustomer}" /></Column>
+                        <Column><Text text="{i18n>colCountry}" /></Column>
+                        <Column hAlign="End"><Text text="{i18n>colOrders}" /></Column>
+                        <Column hAlign="End"><Text text="{i18n>colRevenue}" /></Column>
+                    </columns>
+                    <items>
+                        <ColumnListItem type="Navigation" press=".onTopCustomerPress">
+                            <cells>
+                                <Text text="{dashboard>customerName}" />
+                                <Text text="{dashboard>country}" />
+                                <Text text="{dashboard>orderCount}" />
+                                <ObjectNumber number="{dashboard>revenue}" />
+                            </cells>
+                        </ColumnListItem>
+                    </items>
+                    <noData>
+                        <Text text="{i18n>noOrders}" />
+                    </noData>
+                </Table>
+            </Panel>
+
             <Panel headerText="{i18n>recentOrdersHeader}">
                 <Table items="{
                     path: '/SalesOrders',
