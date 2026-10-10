@@ -1,0 +1,28 @@
+<core:FragmentDefinition
+    xmlns="sap.m"
+    xmlns:core="sap.ui.core"
+    xmlns:f="sap.ui.layout.form">
+    <Dialog
+        id="sendInvoiceDialog"
+        title="{i18n>sendInvoiceDialogTitle}"
+        contentWidth="28rem">
+        <content>
+            <f:SimpleForm layout="ResponsiveGridLayout" editable="true">
+                <f:content>
+                    <Label text="{i18n>sendInvoiceTo}" required="true" />
+                    <Input id="sendInvoiceToInput" type="Email" value="{sendInvoice>/to}" />
+                    <Label text="{i18n>sendInvoiceSubject}" />
+                    <Input value="{sendInvoice>/subject}" />
+                    <Label text="{i18n>sendInvoiceMessage}" />
+                    <TextArea value="{sendInvoice>/message}" rows="5" width="100%" />
+                </f:content>
+            </f:SimpleForm>
+        </content>
+        <beginButton>
+            <Button text="{i18n>sendInvoiceConfirm}" type="Emphasized" press=".onSendInvoiceConfirm" />
+        </beginButton>
+        <endButton>
+            <Button text="{i18n>sendInvoiceCancel}" press=".onSendInvoiceDialogCancel" />
+        </endButton>
+    </Dialog>
+</core:FragmentDefinition>

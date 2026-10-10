@@ -1,6 +1,11 @@
 'use strict';
 
-process.env.CDS_REQUIRES_AUTH_KIND = 'dummy';
+// 'dummy' auth always sets req.user to the privileged built-in user (all
+// roles, no credential check) — it would make every role-restriction test
+// a no-op. 'mocked' actually verifies username/password against `users`
+// below and attaches the matching roles, which is what the role-based
+// (SalesRep / SalesManager / BillingClerk) tests rely on.
+process.env.CDS_REQUIRES_AUTH_KIND = 'mocked';
 
 const cds = require('@sap/cds');
 
@@ -21,7 +26,16 @@ jest.mock('../srv/lib/northwind', () => ({
       { ProductID: 5, ProductName: 'Chef Anton Cajun Seasoning', UnitPrice: 22.00, UnitsInStock: 53, Discontinued: true }
     ];
     return products.filter(p => ids.includes(p.ProductID));
-  })
+  }),
+  withTimeout: jest.fn((promise) => promise)
+}));
+
+jest.mock('../srv/lib/pdf', () => ({
+  generateInvoicePdf: jest.fn(async () => Buffer.from('mock pdf content'))
+}));
+
+jest.mock('../srv/lib/mailer', () => ({
+  sendInvoiceEmail: jest.fn(async () => ({ messageId: 'mock-123' }))
 }));
 
 const ALICE = { auth: { username: 'alice', password: 'alice' } };   // SalesRep
@@ -32,14 +46,14 @@ const SVC = '/odata/v4/order';
 
 /* ─── bootstrap CDS test server ─────────────────────────────── */
 cds.env.requires.auth = {
-  kind: 'dummy',
+  kind: 'mocked',
   users: {
     alice: { password: 'alice', roles: ['SalesRep'] },
     bob:   { password: 'bob',   roles: ['SalesManager'] },
     carol: { password: 'carol', roles: ['BillingClerk'] }
   }
 };
-const { GET, POST, PATCH, DELETE } = cds.test(__dirname + '/..');
+const { GET, POST, PATCH } = cds.test(__dirname + '/..');
 
 /* ═══════════════════════════════════════════════════════════════
  *  1. NORTHWIND READ OPERATIONS
@@ -77,6 +91,42 @@ describe('Northwind master-data reads', () => {
     const { status, data } = await GET(`${SVC}/Shippers`, ALICE);
     expect(status).toBe(200);
     expect(data.value.length).toBeGreaterThan(0);
+  });
+
+  // Regression: @sap/cds 8.9's default odata_new_parser feature silently
+  // drops $filter/$search (but not $orderby/$top/$skip/$count) from the CQN
+  // query handed to a custom READ handler on an @cds.persistence.skip
+  // entity. These entities bypass CQN for collection reads specifically to
+  // route around that gap (see order-service.js's delegateToNorthwind) —
+  // without these tests, that regressed silently (every filter on these 5
+  // entities was a no-op that returned the full, unfiltered list).
+  test('$filter on Products (MD-03) actually filters, not just returns 200', async () => {
+    const { status, data } = await GET(`${SVC}/Products?$filter=CategoryID eq 1`, ALICE);
+    expect(status).toBe(200);
+    expect(data.value.length).toBeGreaterThan(0);
+    expect(data.value.every((p) => p.CategoryID === 1)).toBe(true);
+  });
+
+  test('different $filter values on Products yield different, correctly-scoped results', async () => {
+    const { data: cat1 } = await GET(`${SVC}/Products?$filter=CategoryID eq 1`, ALICE);
+    const { data: cat2 } = await GET(`${SVC}/Products?$filter=CategoryID eq 2`, ALICE);
+
+    expect(cat1.value.every((p) => p.CategoryID === 1)).toBe(true);
+    expect(cat2.value.every((p) => p.CategoryID === 2)).toBe(true);
+    expect(cat1.value.map((p) => p.ProductID).sort()).not.toEqual(cat2.value.map((p) => p.ProductID).sort());
+  });
+
+  test('$filter on Customers by Country actually filters', async () => {
+    const { status, data } = await GET(`${SVC}/Customers?$filter=Country eq 'Germany'`, ALICE);
+    expect(status).toBe(200);
+    expect(data.value.length).toBeGreaterThan(0);
+    expect(data.value.every((c) => c.Country === 'Germany')).toBe(true);
+  });
+
+  test('GET /Customers(key) still works for a single-entity lookup', async () => {
+    const { status, data } = await GET(`${SVC}/Customers('ALFKI')`, ALICE);
+    expect(status).toBe(200);
+    expect(data.CustomerID).toBe('ALFKI');
   });
 });
 
@@ -397,7 +447,7 @@ describe('Additional invalid transitions & direct PATCH', () => {
   });
 
   test('PATCH status directly is rejected (@readonly)', async () => {
-    const err = await PATCH(`${SVC}/SalesOrders(${orderID})`, { status: 'Approved' }, ALICE).catch((e) => e);
+    await PATCH(`${SVC}/SalesOrders(${orderID})`, { status: 'Approved' }, ALICE).catch((e) => e);
     // Depending on CAP version, updating a @readonly field might be ignored or throw an error.
     // We verify the status hasn't actually changed.
     const { data } = await GET(`${SVC}/SalesOrders(${orderID})`, ALICE);
@@ -455,5 +505,90 @@ describe('Order number generation', () => {
       items: [{ productID: 1, quantity: 1 }],
     }, ALICE);
     expect(data.orderNo).toMatch(/^SO-\d{4}-\d{5}$/);
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════
+ *  10. BILLING CLERK PHASE 3 - INVOICES
+ * ═══════════════════════════════════════════════════════════════ */
+
+describe('Billing Clerk - Invoice operations', () => {
+
+  let orderID;
+
+  beforeEach(async () => {
+    // Create, Submit, Approve an order
+    const { data } = await POST(`${SVC}/SalesOrders`, {
+      customerID: 'ALFKI', items: [{ productID: 1, quantity: 1, discount: 0 }]
+    }, ALICE);
+    orderID = data.ID;
+    
+    // ALFKI + 1 item = small amount, so it auto-approves.
+    await POST(`${SVC}/SalesOrders(${orderID})/OrderService.submit`, {}, ALICE);
+  });
+
+  test('BillingClerk can create invoice for Approved order', async () => {
+    const { status, data } = await POST(`${SVC}/SalesOrders(${orderID})/OrderService.createInvoice`, {}, CAROL);
+    expect(status).toBe(200);
+    expect(data.invoiceNo).toMatch(/^INV-\d{4}-\d{5}$/);
+    expect(data.mailStatus).toBe('PENDING');
+
+    // Order status should be Invoiced
+    const { data: order } = await GET(`${SVC}/SalesOrders(${orderID})`, ALICE);
+    expect(order.status).toBe('Invoiced');
+  });
+
+  test('BillingClerk can send invoice email (fails gracefully for mock customer)', async () => {
+    await POST(`${SVC}/SalesOrders(${orderID})/OrderService.createInvoice`, {}, CAROL);
+    
+    // getCustomer returns { CustomerID: 'ALFKI', CompanyName: 'Alfreds Futterkiste' }
+    // No email is present, so it should fail gracefully
+    const err = await POST(`${SVC}/SalesOrders(${orderID})/OrderService.sendInvoice`, {}, CAROL).catch(e => e);
+    
+    expect(err.response?.status || err.status).toBeGreaterThanOrEqual(400);
+    const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
+    expect(msg).toMatch(/Customer has no usable email/);
+    
+    // Check if mailStatus was updated to FAILED
+    const { data: invoice } = await GET(`${SVC}/Invoices?$filter=order_ID eq '${orderID}'`, CAROL);
+    expect(invoice.value[0].mailStatus).toBe('FAILED');
+  });
+
+  test('BillingClerk can send invoice using an overridden recipient email', async () => {
+    await POST(`${SVC}/SalesOrders(${orderID})/OrderService.createInvoice`, {}, CAROL);
+
+    // ALFKI has no Email in Northwind; the UI pre-fills <customerID>@example.test
+    // and the clerk can edit/confirm it — passed through as the `email` param.
+    const { status, data } = await POST(
+      `${SVC}/SalesOrders(${orderID})/OrderService.sendInvoice`,
+      { email: 'ALFKI@example.test' },
+      CAROL
+    );
+
+    expect(status).toBe(200);
+    expect(data.mailStatus).toBe('SENT');
+    expect(data.sentTo).toBe('ALFKI@example.test');
+  });
+
+  test('sendInvoice rejects a malformed overridden email', async () => {
+    await POST(`${SVC}/SalesOrders(${orderID})/OrderService.createInvoice`, {}, CAROL);
+
+    const err = await POST(
+      `${SVC}/SalesOrders(${orderID})/OrderService.sendInvoice`,
+      { email: 'not-an-email' },
+      CAROL
+    ).catch(e => e);
+
+    expect(err.response?.status || err.status).toBeGreaterThanOrEqual(400);
+    const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
+    expect(msg).toMatch(/not a valid email/);
+  });
+
+  test('SalesRep cannot create or send invoices', async () => {
+    let err = await POST(`${SVC}/SalesOrders(${orderID})/OrderService.createInvoice`, {}, ALICE).catch(e => e);
+    expect(err.response?.status || err.status).toBe(403);
+    
+    err = await POST(`${SVC}/SalesOrders(${orderID})/OrderService.sendInvoice`, {}, ALICE).catch(e => e);
+    expect(err.response?.status || err.status).toBe(403);
   });
 });

@@ -1,11 +1,15 @@
 sap.ui.define([
     "sap/ui/core/mvc/Controller",
+    "sap/ui/model/json/JSONModel",
+    "sap/ui/core/Fragment",
     "sap/m/MessageBox",
     "sap/m/MessageToast",
     "sap/ui/core/BusyIndicator",
     "orderhub/model/formatter"
-], function (Controller, MessageBox, MessageToast, BusyIndicator, formatter) {
+], function (Controller, JSONModel, Fragment, MessageBox, MessageToast, BusyIndicator, formatter) {
     "use strict";
+
+    var EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
     return Controller.extend("orderhub.controller.SalesOrder", {
         formatter: formatter,
@@ -28,7 +32,7 @@ sap.ui.define([
             oView.bindElement({
                 path: "/SalesOrders(" + sOrderID + ")",
                 parameters: {
-                    $expand: "items"
+                    $expand: "items,invoice"
                 },
                 events: {
                     dataReceived: function () {
@@ -63,6 +67,7 @@ sap.ui.define([
             var oUserModel = this.getOwnerComponent().getModel("user");
             var bIsSalesRep = oUserModel.getProperty("/roles/SalesRep") === true;
             var bIsSalesManager = oUserModel.getProperty("/roles/SalesManager") === true;
+            var bIsBillingClerk = oUserModel.getProperty("/roles/BillingClerk") === true;
 
             // Alice (SalesRep): Submit (when New) + Cancel (when New or Submitted)
             // Bob (SalesManager): Approve (when Submitted) + Cancel (when New or Submitted)
@@ -71,6 +76,13 @@ sap.ui.define([
             this.byId("btnCancel").setVisible(
                 (sStatus === "New" || sStatus === "Submitted") && (bIsSalesRep || bIsSalesManager)
             );
+
+            // Carol (BillingClerk): Create Invoice (when Approved), View/Send (when Invoiced)
+            var bHasInvoice = !!oContext.getProperty("invoice/ID");
+            this.byId("btnCreateInvoice").setVisible(sStatus === "Approved" && bIsBillingClerk);
+            this.byId("btnViewInvoice").setVisible(sStatus === "Invoiced" && bIsBillingClerk && bHasInvoice);
+            this.byId("btnSendInvoice").setVisible(sStatus === "Invoiced" && bIsBillingClerk && bHasInvoice);
+            this.byId("invoicePanel").setVisible(bHasInvoice && (bIsBillingClerk || bIsSalesManager || bIsSalesRep));
         },
 
         onNavBack: function () {
@@ -149,6 +161,106 @@ sap.ui.define([
                         });
                     }
                 }
+            });
+        },
+
+        onCreateInvoice: function () {
+            var that = this;
+            BusyIndicator.show(0);
+            var oContext = this.getView().getBindingContext();
+            var oAction = oContext.getModel().bindContext("OrderService.createInvoice(...)", oContext);
+            oAction.execute().then(function () {
+                BusyIndicator.hide();
+                MessageToast.show(that.getView().getModel("i18n").getResourceBundle().getText("invoiceCreated"));
+                that.getView().getBindingContext().refresh();
+                setTimeout(function () { that._updateButtonVisibility(); }, 300);
+            }).catch(function (oError) {
+                BusyIndicator.hide();
+                MessageBox.error(oError.message || "Failed to create invoice");
+            });
+        },
+
+        onViewInvoice: function () {
+            var oContext = this.getView().getBindingContext();
+            var sInvoiceID = oContext.getProperty("invoice/ID");
+            if (sInvoiceID) {
+                var sUrl = "/odata/v4/order/Invoices(" + sInvoiceID + ")/content";
+                window.open(sUrl, "_blank");
+            } else {
+                MessageBox.error("Invoice not found.");
+            }
+        },
+
+        onSendInvoice: function () {
+            var oContext = this.getView().getBindingContext();
+            var oBundle = this.getView().getModel("i18n").getResourceBundle();
+
+            // Northwind customers have no email address on file — default the
+            // recipient to a test address the clerk can review/override before sending.
+            var sCustomerID = oContext.getProperty("customerID");
+            var sInvoiceNo = oContext.getProperty("invoice/invoiceNo");
+            var sOrderNo = oContext.getProperty("orderNo");
+
+            var oDialogModel = new JSONModel({
+                to: sCustomerID ? (sCustomerID + "@example.test") : "",
+                subject: oBundle.getText("sendInvoiceDefaultSubject", [sInvoiceNo, sOrderNo]),
+                message: oBundle.getText("sendInvoiceDefaultMessage", [sInvoiceNo, sOrderNo])
+            });
+            this.getView().setModel(oDialogModel, "sendInvoice");
+
+            this._getSendInvoiceDialog().then(function (oDialog) {
+                oDialog.open();
+            });
+        },
+
+        _getSendInvoiceDialog: function () {
+            var oView = this.getView();
+            if (!this._pSendInvoiceDialog) {
+                this._pSendInvoiceDialog = Fragment.load({
+                    id: oView.getId(),
+                    name: "orderhub.fragments.SendInvoiceDialog",
+                    controller: this
+                }).then(function (oDialog) {
+                    oView.addDependent(oDialog);
+                    return oDialog;
+                });
+            }
+            return this._pSendInvoiceDialog;
+        },
+
+        onSendInvoiceDialogCancel: function () {
+            this._getSendInvoiceDialog().then(function (oDialog) {
+                oDialog.close();
+            });
+        },
+
+        onSendInvoiceConfirm: function () {
+            var that = this;
+            var oBundle = this.getView().getModel("i18n").getResourceBundle();
+            var oDialogModel = this.getView().getModel("sendInvoice");
+            var sEmail = (oDialogModel.getProperty("/to") || "").trim();
+
+            if (!EMAIL_RE.test(sEmail)) {
+                MessageBox.error(oBundle.getText("invalidEmail"));
+                return;
+            }
+
+            this._getSendInvoiceDialog().then(function (oDialog) {
+                BusyIndicator.show(0);
+                var oContext = that.getView().getBindingContext();
+                var oAction = oContext.getModel().bindContext("OrderService.sendInvoice(...)", oContext);
+                oAction.setParameter("email", sEmail);
+                oAction.execute().then(function () {
+                    BusyIndicator.hide();
+                    oDialog.close();
+                    MessageToast.show(oBundle.getText("invoiceEmailSent"));
+                    oContext.refresh();
+                }).catch(function (oError) {
+                    BusyIndicator.hide();
+                    oDialog.close();
+                    MessageBox.error(oError.message || oBundle.getText("invoiceEmailFailed"));
+                    oContext.refresh(); // Refresh to update mailStatus to FAILED
+                });
             });
         }
     });

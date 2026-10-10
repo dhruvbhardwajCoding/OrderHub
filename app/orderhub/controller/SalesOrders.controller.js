@@ -43,6 +43,15 @@ sap.ui.define([
                     ],
                     and: false
                 }));
+            } else if (oUserModel && oUserModel.getProperty("/roles/BillingClerk") === true && oUserModel.getProperty("/roles/SalesRep") !== true) {
+                // If strictly a BillingClerk (Carol), show only 'Approved' and 'Invoiced'
+                aFilters.push(new Filter({
+                    filters: [
+                        new Filter("status", FilterOperator.EQ, "Approved"),
+                        new Filter("status", FilterOperator.EQ, "Invoiced")
+                    ],
+                    and: false
+                }));
             }
 
             var oTable = this.byId("ordersTable");

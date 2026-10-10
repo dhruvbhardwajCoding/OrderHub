@@ -68,6 +68,19 @@ sap.ui.define([], function () {
 
         cancelVisible: function (sStatus, bIsSalesRep, bIsSalesManager) {
             return (sStatus === 'New' || sStatus === 'Submitted') && (bIsSalesRep === true || bIsSalesManager === true);
+        },
+
+        mailStatusState: function (sMailStatus) {
+            switch (sMailStatus) {
+                case "SENT":
+                    return "Success";
+                case "FAILED":
+                    return "Error";
+                case "PENDING":
+                    return "Warning";
+                default:
+                    return "None";
+            }
         }
     };
 });
