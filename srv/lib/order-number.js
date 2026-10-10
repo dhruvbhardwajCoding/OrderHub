@@ -1,7 +1,5 @@
 'use strict';
 
-const cds = require('@sap/cds');
-
 /**
  * Generate a sequential order number in the format SO-YYYY-NNNNN.
  *

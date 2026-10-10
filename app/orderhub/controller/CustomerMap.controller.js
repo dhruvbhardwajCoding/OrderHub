@@ -63,7 +63,7 @@ sap.ui.define([
                 // Show all customers on the map
                 that._showAllCustomersOnMap(aCustomers);
 
-            }).catch(function (oError) {
+            }).catch(function () {
                 // Handle Northwind service unavailability gracefully
                 sap.m.MessageToast.show("Could not load customers. Northwind service may be unavailable.");
             });
@@ -137,7 +137,7 @@ sap.ui.define([
             if (!oPage) return;
 
             if (!oCustomer.lat || !oCustomer.lng) {
-                var sMapHtml = '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:#f0f0f0;">' +
+                const sMapHtml = '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:#f0f0f0;">' +
                     '<div style="text-align:center;color:#666;">' +
                     '<span style="font-size:48px;">📍</span><br/>' +
                     '<span style="font-size:16px;font-weight:bold;">' + oCustomer.CompanyName + '</span><br/>' +
@@ -159,7 +159,7 @@ sap.ui.define([
             var sBbox = (fLng - 0.05) + "," + (fLat - 0.03) + "," + (fLng + 0.05) + "," + (fLat + 0.03);
             var sMarker = fLat + "," + fLng;
 
-            var sMapHtml = '<div style="width:100%;height:100%;position:relative;">' +
+            const sMapHtml = '<div style="width:100%;height:100%;position:relative;">' +
                 '<iframe ' +
                     'width="100%" height="100%" frameborder="0" scrolling="no" ' +
                     'src="https://www.openstreetmap.org/export/embed.html?bbox=' + sBbox + '&layer=mapnik&marker=' + sMarker + '" ' +
