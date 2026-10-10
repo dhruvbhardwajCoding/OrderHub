@@ -14,7 +14,7 @@ const LOG = cds.log('ai');
  * time), so isConfigured() reflects the current environment even in tests.
  */
 
-const MODEL = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
+const MODEL = process.env.GEMINI_MODEL || 'gemini-3.1-flash-lite';
 const TIMEOUT_MS = Number(process.env.AI_TIMEOUT_MS) || 15000;
 
 function apiKey() {

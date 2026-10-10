@@ -2,7 +2,9 @@
 
 /**
  * Unit tests for the Gemini AI client (AI-01, AI-02), against a mocked
- * fetch — there is no real GEMINI_API_KEY in this test environment.
+ * fetch. Must stay deterministic even when a developer's own .env has a
+ * real GEMINI_API_KEY in it (CAP loads .env into process.env on startup) —
+ * hence clearing these vars in beforeEach, not just afterEach.
  */
 
 describe('ai', () => {
@@ -11,14 +13,28 @@ describe('ai', () => {
   function freshAi(envOverrides) {
     jest.resetModules();
     Object.assign(process.env, envOverrides);
-    return require('../srv/lib/ai');
+    const freshAiModule = require('../srv/lib/ai');
+    // jest.resetModules() also evicts @sap/cds from the registry, and
+    // re-requiring it reloads .env — which can re-inject a developer's own
+    // real GEMINI_API_KEY right after beforeEach cleared it. Strip it back
+    // out unless this specific test asked for a key.
+    if (!('GEMINI_API_KEY' in envOverrides)) {
+      delete process.env.GEMINI_API_KEY;
+    }
+    return freshAiModule;
   }
 
-  afterEach(() => {
-    delete global.fetch;
+  function clearAiEnv() {
     delete process.env.GEMINI_API_KEY;
     delete process.env.GEMINI_MODEL;
     delete process.env.AI_TIMEOUT_MS;
+  }
+
+  beforeEach(clearAiEnv);
+
+  afterEach(() => {
+    delete global.fetch;
+    clearAiEnv();
   });
 
   describe('isConfigured()', () => {
