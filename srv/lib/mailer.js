@@ -1,4 +1,6 @@
 const nodemailer = require('nodemailer');
+const cds = require('@sap/cds');
+const LOG = cds.log('mailer');
 
 async function sendInvoiceEmail(pdfBuffer, email, invoiceNo) {
     if (!email) {
@@ -43,8 +45,9 @@ async function sendInvoiceEmail(pdfBuffer, email, invoiceNo) {
         ]
     });
 
-    console.log("Message sent: %s", info.messageId);
-    console.log("Preview URL: %s", nodemailer.getTestMessageUrl(info));
+    LOG.info('Message sent:', info.messageId);
+    const previewUrl = nodemailer.getTestMessageUrl(info);
+    if (previewUrl) LOG.info('Preview URL:', previewUrl);
     return info;
 }
 
