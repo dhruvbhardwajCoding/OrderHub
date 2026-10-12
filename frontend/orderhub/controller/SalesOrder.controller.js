@@ -11,6 +11,9 @@ sap.ui.define([
 
     var EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+    // Keep in sync with Component.js's BACKEND_URL and manifest.json's dataSources.
+    var BACKEND_URL = "http://localhost:4004";
+
     return Controller.extend("orderhub.controller.SalesOrder", {
         formatter: formatter,
 
@@ -207,7 +210,7 @@ sap.ui.define([
             var oContext = this.getView().getBindingContext();
             var sInvoiceID = oContext.getProperty("invoice/ID");
             if (sInvoiceID) {
-                var sUrl = "/odata/v4/order/Invoices(" + sInvoiceID + ")/content";
+                var sUrl = BACKEND_URL + "/odata/v4/order/Invoices(" + sInvoiceID + ")/content";
                 window.open(sUrl, "_blank");
             } else {
                 MessageBox.error("Invoice not found.");

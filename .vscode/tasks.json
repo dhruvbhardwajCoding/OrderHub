@@ -3,8 +3,19 @@
   "tasks": [
     {
       "type": "shell",
-      "label": "cds watch",
-      "command": "cds watch",
+      "label": "backend: cds watch",
+      "command": "npm run watch",
+      "options": {
+        "cwd": "${workspaceFolder}/backend"
+      }
+    },
+    {
+      "type": "shell",
+      "label": "frontend: serve",
+      "command": "npm start",
+      "options": {
+        "cwd": "${workspaceFolder}/frontend"
+      }
     }
   ]
 }

@@ -2,9 +2,10 @@
 
 const js = require('@eslint/js');
 
-// Two environments in this repo:
-//  - srv/, test/, and root config files: Node.js CommonJS (require/module.exports)
-//  - app/: browser-side SAPUI5 (sap.ui.define AMD modules, global `sap`/`jQuery`)
+// Backend only — the frontend moved to ../frontend/ (its own package, its
+// own eslint.config.js) when the two were decoupled into separately-run
+// services. srv/, test/, and root config files are Node.js CommonJS
+// (require/module.exports).
 module.exports = [
   js.configs.recommended,
 
@@ -64,27 +65,6 @@ module.exports = [
         afterAll: 'readonly',
         jest: 'readonly',
       },
-    },
-  },
-
-  {
-    files: ['app/**/*.js'],
-    languageOptions: {
-      ecmaVersion: 2022,
-      sourceType: 'script',
-      globals: {
-        sap: 'readonly',
-        jQuery: 'readonly',
-        window: 'readonly',
-        document: 'readonly',
-        console: 'readonly',
-        fetch: 'readonly',
-        setTimeout: 'readonly',
-        clearTimeout: 'readonly',
-      },
-    },
-    rules: {
-      'no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
     },
   },
 ];

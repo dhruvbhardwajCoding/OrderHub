@@ -11,14 +11,14 @@
     },
     "dataSources": {
       "mainService": {
-        "uri": "/odata/v4/order/",
+        "uri": "http://localhost:4004/odata/v4/order/",
         "type": "OData",
         "settings": {
           "odataVersion": "4.0"
         }
       },
       "analyticsService": {
-        "uri": "/odata/v4/analytics/",
+        "uri": "http://localhost:4004/odata/v4/analytics/",
         "type": "OData",
         "settings": {
           "odataVersion": "4.0"

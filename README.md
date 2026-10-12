@@ -47,37 +47,38 @@ A modern SAP Cloud Application Programming Model (CAP) backend service for manag
 
 ## Architecture
 
-The system follows standard SAP CAP multi-tier architecture, delegating master-data queries to the external Northwind service while persisting transactional entities to a local SQLite database:
+The frontend and backend are two independently-run services on different ports/origins — not one app serving both, the way a typical CAP+UI5 project defaults to. The browser talks to the backend purely over cross-origin OData V4; there's no server-side rendering or shared process between them.
 
 ```
-┌────────────────────────────────────────────────────────┐
-│               SAPUI5 Frontend (Phase 2)                │
-└───────────────────────────┬────────────────────────────┘
-                            │ OData V4 (JSON over HTTP)
-                            ▼
-┌────────────────────────────────────────────────────────┐
-│            SAP CAP Backend (/odata/v4/order)           │
-│                                                        │
-│  ┌─────────────────────────┐  ┌─────────────────────┐  │
-│  │   Transactional Engine  │  │ Northwind Delegate  │  │
-│  │  - Calculations        │  │ - Projections       │  │
-│  │  - Order Numbering      │  │ - Live Proxy Reads  │  │
-│  │  - Status Lifecycles    │  │                     │  │
-│  │  - RBAC Restrictions    │  │                     │  │
-│  └────────────┬────────────┘  └──────────┬──────────┘  │
-└───────────────┼──────────────────────────┼─────────────┘
-                │                          │
-                ▼                          ▼
-       ┌─────────────────┐       ┌───────────────────┐
-       │  Local SQLite   │       │ Remote Northwind  │
-       │  (Sales Orders) │       │   OData Service   │
-       └─────────────────┘       └───────────────────┘
+┌─────────────────────────────┐        ┌──────────────────────────────────┐
+│  frontend/  (localhost:8080)│        │  backend/  (localhost:4004)      │
+│  SAPUI5 app, served by a    │        │  SAP CAP server                   │
+│  plain static Express       │  OData │  ┌─────────────────────────┐     │
+│  server (frontend/server.js)│  V4 +  │  │   Transactional Engine  │     │
+│                              │  CORS, │  │  - Calculations         │     │
+│  manifest.json's dataSources│───────▶│  │  - Order Numbering      │     │
+│  point at an absolute       │credent-│  │  - Status Lifecycles    │     │
+│  http://localhost:4004 URL  │ -ialed │  │  - RBAC Restrictions    │     │
+│                              │        │  └────────────┬────────────┘     │
+└─────────────────────────────┘        │               │                  │
+                                        │               ▼                  │
+                                        │      ┌─────────────────┐         │
+                                        │      │  Local SQLite   │         │
+                                        │      │  (Sales Orders) │         │
+                                        │      └─────────────────┘         │
+                                        │  ┌─────────────────────┐         │
+                                        │  │ Northwind Delegate  │────────▶│ Remote Northwind OData V4
+                                        │  └─────────────────────┘         │
+                                        └──────────────────────────────────┘
 ```
 
-1. **Frontend (UI5)**: Consumes OData V4 services from CAP.
-2. **CAP Service (`OrderService`)**: Exposes master-data projections and transactional entities under `/odata/v4/order`.
-3. **Local Store (SQLite)**: Persists `SalesOrders` and `SalesOrderItems`.
-4. **Remote Northwind OData V4**: Queried live via `@sap/cds` service delegation (`https://services.odata.org/V4/Northwind/Northwind.svc/`).
+1. **Frontend (`frontend/`)**: The SAPUI5 app, served standalone by a minimal Express static file server (`frontend/server.js`) on port 8080 — no CAP, no backend code, just static files. `manifest.json`'s `dataSources` and a couple of direct `fetch`/download URLs (`Component.js`, `SalesOrder.controller.js`) point at an absolute `http://localhost:4004` instead of the relative paths you'd use if one server hosted both.
+2. **Backend (`backend/`)**: The CAP server — `OrderService`/`AnalyticsService` under `/odata/v4/*`, the local SQLite database, and the Northwind delegate. Runs entirely on its own; nothing here knows the frontend exists except a CORS allow-list for its origin.
+3. **CORS**: Since the browser now sees two different origins, `backend/srv/server.js` registers an `Access-Control-Allow-Origin` middleware (via `cds.on('bootstrap')`, so it runs before CAP's own routes) that echoes back exactly the configured `FRONTEND_URL` (default `http://localhost:8080`) with credentials enabled — required because the app sends Basic Auth via `fetch(..., {credentials: "include"})`, and credentialed CORS can't use the `*` wildcard origin.
+4. **Local Store (SQLite)**: Persists `SalesOrders` and `SalesOrderItems`, inside `backend/`.
+5. **Remote Northwind OData V4**: Queried live via `@sap/cds` service delegation (`https://services.odata.org/V4/Northwind/Northwind.svc/`).
+
+See [DECISIONS.md ADR 26](DECISIONS.md) for the rationale and what to change if you deploy the two services anywhere other than `localhost:4004`/`localhost:8080`.
 
 ---
 
@@ -108,45 +109,52 @@ The system follows standard SAP CAP multi-tier architecture, delegating master-d
 
 ## Getting Started
 
+The backend and frontend are two separate npm projects (`backend/`, `frontend/`) — install and run each independently, in two terminals.
+
 ### 1. Clone & Install
 
 ```bash
 git clone <repository-url>
 cd orderHub
-npm install
+cd backend  && npm install && cd ..
+cd frontend && npm install && cd ..
 ```
 
-### 2. Environment Configuration
-
-Copy the example environment configuration:
+### 2. Environment Configuration (backend only)
 
 ```bash
+cd backend
 cp .env.example .env
 ```
 
-Available environment variables in `.env`:
+Available environment variables in `backend/.env`:
 
 | Variable | Default | Description |
 | :--- | :--- | :--- |
+| `FRONTEND_URL` | `http://localhost:8080` | The frontend origin the backend accepts cross-origin requests from (CORS) |
 | `TAX_RATE` | `0.10` | Tax rate applied to net order amounts (e.g., `0.10` = 10%) |
 | `APPROVAL_THRESHOLD` | `5000` | Gross amount threshold above which orders require manager approval |
 | `cds_requires_northwind_metadata_credentials_url` | `https://services.odata.org/V4/Northwind/Northwind.svc/` | Remote Northwind OData V4 service endpoint |
+| `GEMINI_API_KEY` | _(none)_ | Enables the AI assistant (AI-01); the app runs fully without it (AI-02) |
+| `SMTP_HOST`/`SMTP_USER`/`SMTP_PASS` | Ethereal (fake) | Real email delivery for invoices — see `.env.example` |
 
-### 3. Run the Development Server
+### 3. Run Both Services
 
-Start the application with live reload using CDS watch:
+**Terminal 1 — backend** (CAP server, port 4004):
 
 ```bash
+cd backend
 npm run watch
 ```
 
-*Or alternatively:*
+**Terminal 2 — frontend** (static UI5 app, port 8080):
 
 ```bash
-npx cds watch
+cd frontend
+npm start
 ```
 
-The service will start at `http://localhost:4004`. Open your browser to explore the CAP launchpad and metadata index.
+Open `http://localhost:8080` in your browser. The UI5 app loads from the frontend server and talks to the backend at `http://localhost:4004` over OData V4 — a real cross-origin setup, not two parts of one process. If you change either port, update `backend/.env`'s `FRONTEND_URL` and the `BACKEND_URL` constant in `frontend/orderhub/Component.js` / `SalesOrder.controller.js` / `manifest.json`'s `dataSources` to match (see DECISIONS.md ADR 26).
 
 ---
 
@@ -280,9 +288,10 @@ Order status transitions to `Cancelled`.
 
 ## Running Automated Tests
 
-The project includes an end-to-end integration and unit test suite powered by **Jest** and `@sap/cds.test`. The test suite runs against an isolated in-memory SQLite database with Northwind test fixtures:
+The project includes an end-to-end integration and unit test suite powered by **Jest** and `@sap/cds.test`. The test suite runs against an isolated in-memory SQLite database with Northwind test fixtures. Tests live in `backend/` (they exercise CAP service handlers, not UI5 code), so run them from there:
 
 ```bash
+cd backend
 npm test
 ```
 
@@ -306,14 +315,15 @@ Invoice PDFs are stored behind one interface, `srv/lib/invoice-store.js`, with t
 
 | Mode | When | Where the PDF lives |
 |------|------|----------------------|
-| `local` (default) | `cds watch` / `npm start` | `Invoices.content` in SQLite |
-| `sdm` | `cds watch --profile hybrid` | SAP Document Management, Integration Option, at `/invoices/<year>/<invoiceNo>.pdf`; only the CMIS object id (`Invoices.dmsObjectId`) is kept locally |
+| `local` (default) | `cd backend && npm run watch` | `Invoices.content` in SQLite |
+| `sdm` | `cd backend && cds watch --profile hybrid` | SAP Document Management, Integration Option, at `/invoices/<year>/<invoiceNo>.pdf`; only the CMIS object id (`Invoices.dmsObjectId`) is kept locally |
 
 The switch is entirely config-driven (`cds.requires.invoiceStore.kind` in `package.json`) — no code changes. `sdm` mode talks to Document Management over its CMIS Browser Binding REST API (`srv/lib/sdm-client.js`), authenticating via OAuth2 client-credentials from `cds.requires.sdm.credentials` (a Document Management, Integration Option service key — see `.env.example` for the env var names, or use `cds bind`).
 
 **This assessment has no SAP BTP account**, so `sdm` mode can't be demoed against a real instance (DMS-06 is the one item explicitly scoped out by section 8.1's "Access" note). Instead:
 
 ```bash
+cd backend
 npm run demo:hybrid
 ```
 
@@ -325,44 +335,57 @@ If Document Management is unreachable, `createInvoice` is rejected and the order
 
 ## Project Structure
 
+Two independent npm projects — see [Architecture](#architecture) and DECISIONS.md ADR 26 for why:
+
 ```
 orderHub/
-├── .env.example                  # Template for environment configuration
-├── package.json                  # Dependencies, scripts, and CAP configuration
 ├── README.md                     # Project documentation (this file)
 ├── DECISIONS.md                  # Architectural decisions log
 ├── AI_USAGE.md                   # AI tooling and implementation disclosures
-├── app/                          # SAPUI5 frontend (orderhub/)
-├── db/
-│   └── schema.cds                # CDS domain model: SalesOrders, SalesOrderItems, Invoices
-├── srv/
-│   ├── order-service.cds         # OData V4 service definition and RBAC annotations
-│   ├── order-service.js          # Event handlers, action hooks, and validation logic
-│   ├── server.js                 # Custom bootstrap: /user-api/currentUser for the UI's role model
-│   ├── external/
-│   │   ├── northwind-metadata.cds# CDS projection model for Northwind OData service
-│   │   ├── northwind-metadata.xml# Northwind EDMX schema definition
-│   │   └── data/                 # Offline seed CSVs for test execution
-│   │       ├── northwind_metadata-Categories.csv
-│   │       ├── northwind_metadata-Customers.csv
-│   │       ├── northwind_metadata-Products.csv
-│   │       ├── northwind_metadata-Shippers.csv
-│   │       └── northwind_metadata-Suppliers.csv
-│   └── lib/                      # Reusable business logic modules
-│       ├── calculations.js       # Line item and order totals computation
-│       ├── constants.js          # Business rules, thresholds, and transition states
-│       ├── northwind.js          # Remote Northwind lookup helper routines
-│       ├── order-number.js       # Sequential SO-YYYY-NNNNN number generator
-│       ├── pdf.js                # Invoice PDF rendering (pdfmake)
-│       ├── mailer.js             # Invoice email dispatch (nodemailer)
-│       ├── invoice-store.js      # local/sdm storage facade (DMS-01)
-│       └── sdm-client.js         # CMIS Browser Binding REST client (DMS-02)
-└── test/
-    ├── order-service.test.js     # Main Jest integration suite
-    ├── sdm-client.test.js        # CMIS client unit tests (mocked fetch)
-    ├── invoice-store.test.js     # invoice-store facade unit tests
-    └── fixtures/
-        └── mock-sdm-fetch.js     # fetch-level CMIS mock for `npm run demo:hybrid`
+│
+├── backend/                      # SAP CAP server — runs standalone on :4004
+│   ├── .env.example               # Template for environment configuration
+│   ├── package.json               # Dependencies, scripts, and CAP configuration
+│   ├── eslint.config.js
+│   ├── db/
+│   │   └── schema.cds             # CDS domain model: SalesOrders, SalesOrderItems, Invoices
+│   ├── srv/
+│   │   ├── order-service.cds      # OData V4 service definition and RBAC annotations
+│   │   ├── order-service.js       # Event handlers, action hooks, and validation logic
+│   │   ├── analytics-service.cds/.js  # Dashboard + customer-map aggregation (AN-*, MAP-*)
+│   │   ├── server.js              # Custom bootstrap: CORS for the frontend origin, /user-api/currentUser
+│   │   ├── external/
+│   │   │   ├── northwind-metadata.cds # CDS projection model for Northwind OData service
+│   │   │   ├── northwind-metadata.xml # Northwind EDMX schema definition
+│   │   │   └── data/               # Offline seed CSVs for test execution
+│   │   └── lib/                   # Reusable business logic modules
+│   │       ├── calculations.js     # Line item and order totals computation
+│   │       ├── constants.js        # Business rules, thresholds, and transition states
+│   │       ├── northwind.js        # Remote Northwind lookup helper routines
+│   │       ├── northwind-cache.js  # In-memory TTL cache for master-data reads (MD-05)
+│   │       ├── geocode.js          # Nominatim geocoding, cached in CustomerGeo (MAP-02)
+│   │       ├── ai.js                # Gemini REST client (AI-01, AI-02)
+│   │       ├── order-number.js     # Sequential SO-YYYY-NNNNN number generator
+│   │       ├── pdf.js               # Invoice PDF rendering (pdfmake)
+│   │       ├── mailer.js            # Invoice email dispatch (nodemailer)
+│   │       ├── invoice-store.js     # local/sdm storage facade (DMS-01)
+│   │       └── sdm-client.js        # CMIS Browser Binding REST client (DMS-02)
+│   └── test/
+│       ├── order-service.test.js   # Main Jest integration suite
+│       ├── sdm-client.test.js      # CMIS client unit tests (mocked fetch)
+│       ├── invoice-store.test.js   # invoice-store facade unit tests
+│       └── fixtures/
+│           └── mock-sdm-fetch.js   # fetch-level CMIS mock for `npm run demo:hybrid`
+│
+└── frontend/                      # SAPUI5 app — runs standalone on :8080
+    ├── package.json               # Just `express`, to serve the static files
+    ├── eslint.config.js
+    ├── server.js                  # Minimal static file server
+    └── orderhub/                  # The UI5 app itself
+        ├── index.html              # UI5 bootstrap (SAPUI5 CDN + Leaflet)
+        ├── manifest.json           # App descriptor — dataSources point at http://localhost:4004
+        ├── Component.js            # App bootstrap; BACKEND_URL constant
+        ├── controller/, view/, control/, fragments/, model/, i18n/
 ```
 
 ---
@@ -458,7 +481,7 @@ Status against the assessment brief's requirement IDs (section 5). ✅ done · �
 
 | Area | Requirement | Status | Note |
 |---|---|---|---|
-| Setup | `git clone`, `npm install`, copy `.env.example`, `cds watch` starts it, `npm test` runs all tests | ✅ | Not independently re-verified from a fresh clone in this session |
+| Setup | `git clone`, `npm install`, copy `.env.example`, `cds watch` starts it, `npm test` runs all tests | ✅ | Backend and frontend are now two separate npm projects (`backend/`, `frontend/`) — see [Getting Started](#getting-started); each step above happens once per folder |
 | Security | Mocked auth, 3 users/roles, `@requires`/`@restrict` | ✅ | `kind: 'mocked'` (see DECISIONS.md ADR 14 for why `kind: 'dummy'` doesn't work) |
 | Secrets | No keys/passwords/tokens in the repo or its history | ✅ | All via env vars, documented in `.env.example` |
 | Tests | 10+ `cds.test` tests across the listed categories, incl. PDF bytes starting with `%PDF` | ✅ | 122 tests; `test/pdf.test.js` checks the literal `%PDF` requirement against the real, unmocked generator |
@@ -466,7 +489,7 @@ Status against the assessment brief's requirement IDs (section 5). ✅ done · �
 | Geocoding | Nominatim rate limit, User-Agent, `CustomerGeo` cache | ✅ | `srv/lib/geocode.js` — 1 req/sec throttle, descriptive `GEOCODE_USER_AGENT`, cached in `CustomerGeo` |
 | Performance | Server-side paging; no full-dataset loads; <3s per screen | ✅ | OData `$top`/`$skip` paging is in place; measured live against the real running server — SalesOrders list ~13ms, dashboard KPIs ~10–30ms (cached), cold (uncached) Northwind Products read ~1.6s (one remote round trip, then ~9ms cached), Customer Map ~0.4s — all well under 3s |
 | Errors | `req.error`/`req.reject` with proper HTTP codes; `cds.log`, not `console.log` | ✅ | |
-| Code quality | ESLint config committed and clean; no dead code | ✅ | `eslint.config.js`, `npm run lint` |
+| Code quality | ESLint config committed and clean; no dead code | ✅ | Both `backend/eslint.config.js` and `frontend/eslint.config.js`, each run via that folder's own `npm run lint` |
 | Git | Small, meaningful commits | 🟡 | The pre-existing `first commit` bundles all of Phases 1–2 in one commit (not rewritten — that would mean rewriting already-existing history); everything since is organized into focused, individually-reviewable commits |
 
 ---

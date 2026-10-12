@@ -1,0 +1,16 @@
+{
+  "name": "northwind-order-hub-frontend",
+  "version": "1.0.0",
+  "description": "SAPUI5 frontend for Northwind Order Hub — served standalone, decoupled from the CAP backend",
+  "private": true,
+  "scripts": {
+    "start": "node server.js",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "express": "^4"
+  },
+  "devDependencies": {
+    "eslint": "^10.12.0"
+  }
+}

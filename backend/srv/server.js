@@ -1,6 +1,28 @@
 const cds = require('@sap/cds');
 const { isConfigured: aiConfigured } = require('./lib/ai');
 
+// The frontend now runs as its own static server on a different origin
+// (see frontend/server.js) instead of being served by CAP itself, so the
+// browser treats every request to this API as cross-origin and blocks it
+// unless we say otherwise. Credentialed requests (Basic Auth, via
+// `credentials: "include"` on the frontend's fetch calls) can't use the
+// `*` wildcard — the origin must be echoed back explicitly — so this is a
+// single allowed origin, not an open CORS policy. Registered on
+// cds.on('bootstrap') so it runs before CAP mounts the OData protocol
+// adapters, not just before our own /user-api route below.
+const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:8080';
+
+cds.on('bootstrap', (app) => {
+  app.use((req, res, next) => {
+    res.set('Access-Control-Allow-Origin', FRONTEND_URL);
+    res.set('Access-Control-Allow-Credentials', 'true');
+    res.set('Access-Control-Allow-Methods', 'GET, POST, PATCH, PUT, DELETE, OPTIONS');
+    res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    if (req.method === 'OPTIONS') return res.sendStatus(204);
+    next();
+  });
+});
+
 // Does `userDef.roles` include `role`? CAP's own auth middleware (whichever
 // kind is configured) mutates cds.env.requires.auth.users[*] in place the
 // first time it runs: a plain roles array (['SalesRep']) becomes a

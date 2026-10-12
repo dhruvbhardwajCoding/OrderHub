@@ -5,6 +5,13 @@ sap.ui.define([
 ], function (UIComponent, Device, JSONModel) {
     "use strict";
 
+    // The backend now runs as its own CAP server on a different origin (see
+    // backend/srv/server.js's CORS setup) instead of serving this app itself.
+    // Keep this in sync with manifest.json's dataSources and the invoice
+    // download URL in SalesOrder.controller.js if you change the backend's
+    // host/port.
+    var BACKEND_URL = "http://localhost:4004";
+
     return UIComponent.extend("orderhub.Component", {
         metadata: {
             manifest: "json"
@@ -27,7 +34,7 @@ sap.ui.define([
             this.setModel(oUserModel, "user");
 
             // Fetch current user with credentials (enables Basic auth prompt)
-            fetch("/user-api/currentUser", { credentials: "include" })
+            fetch(BACKEND_URL + "/user-api/currentUser", { credentials: "include" })
                 .then(function (res) {
                     if (res.status === 401) {
                         // Browser should have shown a Basic auth prompt.
