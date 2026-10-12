@@ -17,7 +17,20 @@ cds.on('bootstrap', (app) => {
     res.set('Access-Control-Allow-Origin', FRONTEND_URL);
     res.set('Access-Control-Allow-Credentials', 'true');
     res.set('Access-Control-Allow-Methods', 'GET, POST, PATCH, PUT, DELETE, OPTIONS');
-    res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    // The UI5 OData v4 model sends several of its own request headers
+    // (X-CSRF-Token for CAP's CSRF protection, sap-cancel-on-close for
+    // request-cancellation semantics, and others depending on the UI5
+    // version) that a fixed allow-list would need to keep chasing one at a
+    // time. Reflecting back whatever the browser's own preflight says it
+    // intends to send (Access-Control-Request-Headers) is the standard,
+    // robust answer to "an unknown set of client headers needs to pass" —
+    // it only ever grants exactly what this specific request already
+    // declared it was going to send, not an open door.
+    res.set('Access-Control-Allow-Headers', req.headers['access-control-request-headers'] || 'Content-Type, Authorization, X-CSRF-Token');
+    // Cross-origin JS can only read safelisted response headers unless they're
+    // exposed here. UI5 rejects every OData response without a readable
+    // OData-Version, and reads the others for CSRF, messages, and ETags.
+    res.set('Access-Control-Expose-Headers', 'OData-Version, X-CSRF-Token, sap-messages, Location, ETag, Preference-Applied, Date, Last-Modified, Age, sap-metadata-last-modified');
     if (req.method === 'OPTIONS') return res.sendStatus(204);
     next();
   });

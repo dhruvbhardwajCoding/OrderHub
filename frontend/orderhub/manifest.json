@@ -69,7 +69,8 @@
           "synchronizationMode": "None",
           "operationMode": "Server",
           "autoExpandSelect": true,
-          "groupId": "$auto"
+          "groupId": "$auto",
+          "withCredentials": true
         }
       },
       "analytics": {
@@ -78,7 +79,8 @@
         "settings": {
           "synchronizationMode": "None",
           "operationMode": "Server",
-          "groupId": "$auto"
+          "groupId": "$auto",
+          "withCredentials": true
         }
       }
     },

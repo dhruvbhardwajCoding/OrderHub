@@ -44,9 +44,11 @@
                             <Text text="{UnitsInStock}" />
                             <ObjectStatus text="{
                                 path: 'Discontinued',
+                                targetType: 'any',
                                 formatter: '.formatter.discontinuedText'
                             }" state="{
                                 path: 'Discontinued',
+                                targetType: 'any',
                                 formatter: '.formatter.discontinuedState'
                             }" />
                             <Text text="{CategoryID}" />
