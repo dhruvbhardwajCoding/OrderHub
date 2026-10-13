@@ -53,9 +53,14 @@ cds.env.requires.auth = {
 };
 const { GET, POST } = cds.test(__dirname + '/..');
 
+// SO-08: SalesOrders' key is now (ID, IsActiveEntity) and POST only creates
+// a draft — activate it before submit() so it becomes a real, numbered order.
+const orderUrl = (id, active = true) => `${ORDER_SVC}/SalesOrders(ID=${id},IsActiveEntity=${active})`;
+
 async function createConfirmedOrder(customerID, productID, quantity) {
-  const { data } = await POST(`${ORDER_SVC}/SalesOrders`, { customerID, items: [{ productID, quantity, discount: 0 }] }, ALICE);
-  await POST(`${ORDER_SVC}/SalesOrders(${data.ID})/OrderService.submit`, {}, ALICE);
+  const { data: draft } = await POST(`${ORDER_SVC}/SalesOrders`, { customerID, items: [{ productID, quantity, discount: 0 }] }, ALICE);
+  const { data } = await POST(`${orderUrl(draft.ID, false)}/OrderService.draftActivate`, {}, ALICE);
+  await POST(`${orderUrl(data.ID)}/OrderService.submit`, {}, ALICE);
   return data.ID;
 }
 
@@ -67,6 +72,16 @@ describe('AnalyticsService', () => {
     expect(data).toMatchObject({ orderCount: 0, revenue: 0, openApprovals: 0, invoicesSent: 0 });
   });
 
+  // SO-08: AnalyticsService reads orderhub.SalesOrders directly — drafts
+  // live in a separate shadow table and were never wired into this read —
+  // so creating one (never activating it) must not move any KPI number.
+  test('a draft (not yet activated) does not affect KPIs', async () => {
+    const before = (await GET(`${AN_SVC}/getKPIs()`, ALICE)).data;
+    await POST(`${ORDER_SVC}/SalesOrders`, { customerID: 'ALFKI', items: [{ productID: 1, quantity: 1, discount: 0 }] }, ALICE);
+    const after = (await GET(`${AN_SVC}/getKPIs()`, ALICE)).data;
+    expect(after).toEqual(before);
+  });
+
   describe('with a mix of confirmed, pending and small orders', () => {
     beforeAll(async () => {
       // Small orders auto-approve (<= APPROVAL_THRESHOLD) -> "confirmed" revenue
@@ -75,10 +90,11 @@ describe('AnalyticsService', () => {
       await createConfirmedOrder('ALFKI', 3, 1); // Aniseed Syrup, 10 * 1.1 = 11.00
 
       // Large order stays Submitted — must NOT count as confirmed revenue
-      const { data } = await POST(`${ORDER_SVC}/SalesOrders`, {
+      const { data: draft } = await POST(`${ORDER_SVC}/SalesOrders`, {
         customerID: 'ALFKI', items: [{ productID: 1, quantity: 300, discount: 0 }],
       }, ALICE);
-      await POST(`${ORDER_SVC}/SalesOrders(${data.ID})/OrderService.submit`, {}, ALICE);
+      const { data } = await POST(`${orderUrl(draft.ID, false)}/OrderService.draftActivate`, {}, ALICE);
+      await POST(`${orderUrl(data.ID)}/OrderService.submit`, {}, ALICE);
     });
 
     test('getKPIs() counts all orders but only sums confirmed revenue', async () => {

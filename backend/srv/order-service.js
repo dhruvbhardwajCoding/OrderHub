@@ -32,7 +32,7 @@ module.exports = class OrderService extends cds.ApplicationService {
     const db        = await cds.connect.to('db');
 
     const {
-      SalesOrders, Invoices,
+      SalesOrders, SalesOrderItems, Invoices,
       Customers, Products, Categories, Suppliers, Shippers,
     } = this.entities;
 
@@ -101,97 +101,12 @@ module.exports = class OrderService extends cds.ApplicationService {
      *  SALES ORDER — CREATE
      * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
-    this.before('CREATE', SalesOrders, async (req) => {
-      const data = req.data;
-
-      /* --- basic payload checks -------------------------------- */
-      if (!data.customerID) {
-        return req.reject(400, 'Customer ID is required.');
-      }
-      if (!data.items || data.items.length === 0) {
-        return req.reject(400, 'At least one order item is required.');
-      }
-
-      /* --- validate customer via Northwind ---------------------- */
-      let customer;
-      try {
-        customer = await getCustomer(northwind, data.customerID);
-      } catch (err) {
-        return req.reject(err.status || 502, err.message);
-      }
-      if (!customer) {
-        return req.reject(400, `Customer '${data.customerID}' not found in Northwind.`);
-      }
-
-      /* --- validate products via Northwind ---------------------- */
-      const productIDs = data.items.map((i) => i.productID);
-      let products;
-      try {
-        products = await getProducts(northwind, productIDs);
-      } catch (err) {
-        return req.reject(err.status || 502, err.message);
-      }
-      const productMap = new Map(products.map((p) => [p.ProductID, p]));
-
-      for (const item of data.items) {
-        const product = productMap.get(item.productID);
-
-        if (!product) {
-          return req.reject(400, `Product with ID '${item.productID}' not found in Northwind.`);
-        }
-        if (product.Discontinued) {
-          return req.reject(400, `Product '${product.ProductName}' (ID ${item.productID}) is discontinued and cannot be ordered.`);
-        }
-
-        /* quantity validation */
-        if (item.quantity == null || item.quantity < MIN_QUANTITY || item.quantity > MAX_QUANTITY) {
-          return req.reject(400, `Quantity must be between ${MIN_QUANTITY} and ${MAX_QUANTITY}. Received: ${item.quantity}`);
-        }
-
-        /* discount validation */
-        const discount = item.discount ?? 0;
-        if (discount < MIN_DISCOUNT || discount > MAX_DISCOUNT) {
-          return req.reject(400, `Discount must be between ${MIN_DISCOUNT}% and ${MAX_DISCOUNT}%. Received: ${discount}%`);
-        }
-
-        /* stock warning (non-blocking) */
-        if (item.quantity > (product.UnitsInStock ?? 0)) {
-          req.warn(
-            200,
-            `Quantity ${item.quantity} exceeds available stock (${product.UnitsInStock}) for '${product.ProductName}'.`
-          );
-        }
-
-        /* snapshot product data & calculate item amount */
-        item.productName = product.ProductName;
-        item.unitPrice   = product.UnitPrice;
-        item.discount    = discount;
-        item.netAmount   = calculateItemNetAmount(product.UnitPrice, item.quantity, discount);
-      }
-
-      /* --- snapshot customer data ------------------------------- */
-      data.customerName = customer.CompanyName;
-
-      /* --- calculate order totals ------------------------------- */
-      const totals     = calculateOrderTotals(data.items);
-      data.netAmount   = totals.netAmount;
-      data.taxAmount   = totals.taxAmount;
-      data.grossAmount = totals.grossAmount;
-
-      /* --- defaults -------------------------------------------- */
-      data.status        = ORDER_STATUS.NEW;
-      data.currency_code = data.currency_code || DEFAULT_CURRENCY;
-
-      /* --- generate order number -------------------------------- */
-      data.orderNo = await generateOrderNumber(db);
-
-      LOG.info('Sales order prepared', {
-        orderNo:  data.orderNo,
-        customer: data.customerID,
-        items:    data.items.length,
-        gross:    data.grossAmount,
-      });
-    });
+    // SO-08: this same validation/pricing logic now runs at two points —
+    // CREATE (a non-draft POST, or activating a brand-new draft) and UPDATE
+    // (activating an edited draft) — so it lives in one shared function,
+    // validateAndPrice(), instead of being duplicated. See that function's
+    // own comment below for why `isNew` is the only thing that differs.
+    this.before('CREATE', SalesOrders, (req) => validateAndPrice(req, { isNew: true, northwind, db }));
 
     /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
      *  SALES ORDER — UPDATE guard
@@ -206,6 +121,35 @@ module.exports = class OrderService extends cds.ApplicationService {
       );
       if (order && order.status !== ORDER_STATUS.NEW) {
         return req.reject(403, `Cannot edit an order in '${order.status}' status. Only 'New' orders can be modified.`);
+      }
+
+      // SO-08: this UPDATE is draft activation of an edited order — CAP
+      // merges the draft's full deep data (including `items`) into
+      // req.data for this event, so the same validation/pricing CREATE
+      // uses applies here too. A plain PATCH of a top-level field (e.g.
+      // from an API caller, not the draft flow) won't carry `items` and
+      // is left alone — there's nothing to re-price.
+      if (req.data.items) {
+        await validateAndPrice(req, { isNew: false, northwind, db });
+      }
+    });
+
+    /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+     *  SALES ORDER — EDIT guard (SO-08)
+     * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+
+    // EDIT (draftEdit) copies the active order into a new draft for
+    // editing. Same "only while New" rule as UPDATE above — an order
+    // that's already Submitted/Approved/etc. shouldn't be editable via
+    // a draft any more than via a direct PATCH.
+    this.before('EDIT', SalesOrders, async (req) => {
+      const ID = extractKey(req);
+      const order = await db.run(
+        SELECT.one.from('orderhub.SalesOrders').columns('status').where({ ID })
+      );
+      if (!order) return req.reject(404, 'Order not found.');
+      if (order.status !== ORDER_STATUS.NEW) {
+        return req.reject(409, `Cannot edit an order in '${order.status}' status. Only 'New' orders can be edited.`);
       }
     });
 
@@ -222,7 +166,19 @@ module.exports = class OrderService extends cds.ApplicationService {
     // `Invoices.order` (a plain Association, not owned by SalesOrders, so it
     // is not cascade-deleted).
     this.before('DELETE', SalesOrders, async (req) => {
-      const ID = req.params[0];
+      // SO-08: req.params[0] is now {ID, IsActiveEntity} — passing that
+      // object straight into where({ID}) (the old code) would silently
+      // match no row at all, turning this guard into a no-op. extractKey()
+      // (already used by the bound actions below) pulls out the plain ID.
+      const key = req.params[0];
+      if (key && typeof key === 'object' && key.IsActiveEntity === false) {
+        // Discarding a draft never touches the active order and is always
+        // allowed — the EDIT guard above already ensures a draft can only
+        // exist for an active order that was New when editing started.
+        return;
+      }
+
+      const ID = extractKey(req);
       if (!ID) return;
 
       const order = await db.run(
@@ -232,6 +188,125 @@ module.exports = class OrderService extends cds.ApplicationService {
         return req.reject(409, `Cannot delete an order in '${order.status}' status. Only 'New' orders can be deleted.`);
       }
     });
+
+    /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+     *  NEW DRAFT (SO-08) — starting a new order
+     * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+
+    // Starting a draft (POST /SalesOrders) only needs a valid customer —
+    // full item/pricing validation happens once, at activation, via
+    // validateAndPrice() (the CREATE handler above). This just gives the
+    // draft editor a customer name to show immediately, and catches a bad
+    // customerID up front rather than only when the clerk tries to save.
+    this.before('NEW', SalesOrders.drafts, async (req) => {
+      const data = req.data;
+      if (!data.customerID) return req.reject(400, 'Customer ID is required.');
+
+      let customer;
+      try {
+        customer = await getCustomer(northwind, data.customerID);
+      } catch (err) {
+        return req.reject(err.status || 502, err.message);
+      }
+      if (!customer) return req.reject(400, `Customer '${data.customerID}' not found in Northwind.`);
+
+      data.customerName = customer.CompanyName;
+      data.currency_code = data.currency_code || DEFAULT_CURRENCY;
+    });
+
+    /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+     *  DRAFT ITEMS (SO-08) — product name/price + live totals
+     * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+
+    // Draft items deliberately don't get quantity/discount bounds enforced
+    // here — the draft is allowed to be incomplete or invalid while the
+    // clerk is still editing; validateAndPrice() enforces those bounds once,
+    // at activation. This only fills in what the editor UI needs to *show*
+    // (product name/price) and keeps a running netAmount/header total so
+    // the numbers on screen stay honest while editing.
+    async function fillDraftItemProduct(req) {
+      const data = req.data;
+      if (data.productID == null) return;
+
+      const [product] = await getProducts(northwind, [data.productID]);
+      if (!product) return req.reject(400, `Product with ID '${data.productID}' not found in Northwind.`);
+
+      data.productName = product.ProductName;
+      data.unitPrice    = product.UnitPrice;
+      if (data.discount == null) data.discount = 0;
+      data.netAmount = calculateItemNetAmount(product.UnitPrice, data.quantity || 0, data.discount || 0);
+    }
+
+    this.before('NEW', SalesOrderItems.drafts, fillDraftItemProduct);
+
+    // Empirically (checked live, not documented anywhere obvious): an OData
+    // PATCH against a *child* draft entity (SalesOrderItems, not the draft
+    // root SalesOrders) dispatches as CAP event 'UPDATE', not 'PATCH' — the
+    // event-name remap in CAP's OData adapter that turns UPDATE into PATCH
+    // only triggers for the draft root itself.
+    this.before('UPDATE', SalesOrderItems.drafts, async (req) => {
+      // productID changed (or this is a brand-new line from the item
+      // dialog, keyed by productID on its first edit) — re-fetch product
+      // data. Otherwise, a quantity/discount-only edit still needs
+      // netAmount recomputed, but doesn't need another Northwind round trip.
+      if (req.data.productID != null) {
+        return fillDraftItemProduct(req);
+      }
+      if (req.data.quantity != null || req.data.discount != null) {
+        const current = await db.run(
+          SELECT.one.from(SalesOrderItems.drafts).columns('unitPrice', 'quantity', 'discount').where({ ID: extractKey(req) })
+        );
+        if (!current) return;
+        const quantity = req.data.quantity ?? current.quantity;
+        const discount = req.data.discount ?? current.discount;
+        req.data.netAmount = calculateItemNetAmount(current.unitPrice, quantity, discount);
+      }
+    });
+
+    // After an item is added/edited/removed on a draft, recompute the
+    // draft order's header totals from whatever items now exist. Runs as
+    // one `after` handler shared by NEW/UPDATE/DELETE rather than duplicated
+    // per event; the parent order's ID is stashed on `req` in `before`
+    // since DELETE carries no body and an edit only carries changed fields.
+    async function recomputeDraftTotals(orderID) {
+      if (!orderID) return;
+      const items = await db.run(SELECT.from(SalesOrderItems.drafts).columns('netAmount').where({ parent_ID: orderID }));
+      // netAmount round-trips through SQLite as a Decimal; coerce
+      // defensively so summing never falls into string concatenation.
+      const totals = calculateOrderTotals(items.map((i) => ({ netAmount: Number(i.netAmount) || 0 })));
+      await db.run(
+        UPDATE(SalesOrders.drafts)
+          .set({ netAmount: totals.netAmount, taxAmount: totals.taxAmount, grossAmount: totals.grossAmount })
+          .where({ ID: orderID })
+      );
+    }
+
+    this.before(['NEW', 'UPDATE', 'DELETE'], SalesOrderItems.drafts, async (req) => {
+      req._parentOrderID = req.data && req.data.parent_ID;
+      if (!req._parentOrderID) {
+        const ID = req.event === 'DELETE' ? extractDeleteKey(req) : extractKey(req);
+        if (!ID) return;
+        const row = await db.run(SELECT.one.from(SalesOrderItems.drafts).columns('parent_ID').where({ ID }));
+        if (row) req._parentOrderID = row.parent_ID;
+      }
+    });
+
+    this.after(['NEW', 'UPDATE', 'DELETE'], SalesOrderItems.drafts, async (_result, req) => {
+      await recomputeDraftTotals(req._parentOrderID);
+    });
+
+    /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+     *  WORKFLOW ACTIONS ON A DRAFT KEY (SO-08) — clear error, not a 501
+     * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+
+    // Without these, calling e.g. submit on a draft key (IsActiveEntity=
+    // false) falls through to CAP's generic "no handler for submit on
+    // ...drafts" 501 — already blocked either way, since these actions are
+    // only ever registered against the active SalesOrders entity below, but
+    // that's not a message a user should see. Same outcome, clearer reason.
+    for (const action of ['submit', 'approve', 'cancel', 'createInvoice', 'sendInvoice']) {
+      this.on(action, SalesOrders.drafts, (req) => req.reject(409, 'Save or discard the draft before doing this.'));
+    }
 
     /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
      *  INVOICE MEDIA STREAM — lazy backfill from Document Management
@@ -587,11 +662,139 @@ module.exports = class OrderService extends cds.ApplicationService {
  * ═══════════════════════════════════════════════════════════════ */
 
 /**
+ * SO-08: validate and price a sales order, shared between CREATE (a
+ * non-draft POST, or activating a brand-new draft) and UPDATE (activating
+ * an edited draft). Both run this exact same logic — the same customer/
+ * product/discontinued/quantity/discount checks and the same snapshot +
+ * totals math — so it lives in one place instead of two copies that could
+ * drift apart.
+ *
+ * `isNew` is the only thing that differs between the two call sites:
+ * a brand-new order gets a generated order number and starts as 'New';
+ * an edited order keeps both as they already are.
+ *
+ * @param {object} req - the CREATE or UPDATE request; req.data is mutated
+ *   in place with snapshotted names/prices and computed totals, exactly as
+ *   the original CREATE-only handler did.
+ * @param {{isNew: boolean, northwind: object, db: object}} ctx
+ */
+async function validateAndPrice(req, { isNew, northwind, db }) {
+  const data = req.data;
+
+  /* --- basic payload checks -------------------------------- */
+  if (!data.customerID) {
+    return req.reject(400, 'Customer ID is required.');
+  }
+  if (!data.items || data.items.length === 0) {
+    return req.reject(400, 'At least one order item is required.');
+  }
+
+  /* --- validate customer via Northwind ---------------------- */
+  let customer;
+  try {
+    customer = await getCustomer(northwind, data.customerID);
+  } catch (err) {
+    return req.reject(err.status || 502, err.message);
+  }
+  if (!customer) {
+    return req.reject(400, `Customer '${data.customerID}' not found in Northwind.`);
+  }
+
+  /* --- validate products via Northwind ---------------------- */
+  const productIDs = data.items.map((i) => i.productID);
+  let products;
+  try {
+    products = await getProducts(northwind, productIDs);
+  } catch (err) {
+    return req.reject(err.status || 502, err.message);
+  }
+  const productMap = new Map(products.map((p) => [p.ProductID, p]));
+
+  for (const item of data.items) {
+    const product = productMap.get(item.productID);
+
+    if (!product) {
+      return req.reject(400, `Product with ID '${item.productID}' not found in Northwind.`);
+    }
+    if (product.Discontinued) {
+      return req.reject(400, `Product '${product.ProductName}' (ID ${item.productID}) is discontinued and cannot be ordered.`);
+    }
+
+    /* quantity validation */
+    if (item.quantity == null || item.quantity < MIN_QUANTITY || item.quantity > MAX_QUANTITY) {
+      return req.reject(400, `Quantity must be between ${MIN_QUANTITY} and ${MAX_QUANTITY}. Received: ${item.quantity}`);
+    }
+
+    /* discount validation */
+    const discount = item.discount ?? 0;
+    if (discount < MIN_DISCOUNT || discount > MAX_DISCOUNT) {
+      return req.reject(400, `Discount must be between ${MIN_DISCOUNT}% and ${MAX_DISCOUNT}%. Received: ${discount}%`);
+    }
+
+    /* stock warning (non-blocking) */
+    if (item.quantity > (product.UnitsInStock ?? 0)) {
+      req.warn(
+        200,
+        `Quantity ${item.quantity} exceeds available stock (${product.UnitsInStock}) for '${product.ProductName}'.`
+      );
+    }
+
+    /* snapshot product data & calculate item amount */
+    item.productName = product.ProductName;
+    item.unitPrice   = product.UnitPrice;
+    item.discount    = discount;
+    item.netAmount   = calculateItemNetAmount(product.UnitPrice, item.quantity, discount);
+  }
+
+  /* --- snapshot customer data ------------------------------- */
+  data.customerName = customer.CompanyName;
+
+  /* --- calculate order totals ------------------------------- */
+  const totals     = calculateOrderTotals(data.items);
+  data.netAmount   = totals.netAmount;
+  data.taxAmount   = totals.taxAmount;
+  data.grossAmount = totals.grossAmount;
+
+  if (isNew) {
+    /* --- defaults -------------------------------------------- */
+    data.status        = ORDER_STATUS.NEW;
+    data.currency_code = data.currency_code || DEFAULT_CURRENCY;
+
+    /* --- generate order number -------------------------------- */
+    data.orderNo = await generateOrderNumber(db);
+  }
+
+  LOG.info(isNew ? 'Sales order prepared' : 'Sales order re-priced on edit', {
+    orderNo:  data.orderNo,
+    customer: data.customerID,
+    items:    data.items.length,
+    gross:    data.grossAmount,
+  });
+}
+
+/**
  * Extract the entity key (ID) from a bound-action request.
  */
 function extractKey(req) {
   const p = req.params[0];
   return typeof p === 'object' ? p.ID : p;
+}
+
+/**
+ * Extract the entity key (ID) from a DELETE request. req.params is empty
+ * for a DELETE targeting a composition child's own entity set (verified
+ * live — e.g. DELETE /SalesOrderItems(ID=..,IsActiveEntity=false), unlike
+ * a bound action or a DELETE on the draft root, both of which do populate
+ * it), so this falls back to parsing the CQN where-clause directly — the
+ * same pattern the invoice content-stream handler above already uses.
+ */
+function extractDeleteKey(req) {
+  const fromParams = extractKey(req);
+  if (fromParams) return fromParams;
+  const ref = req.query.DELETE && req.query.DELETE.from && req.query.DELETE.from.ref;
+  const where = ref && ref[0] && ref[0].where;
+  const idEntry = where && where.find((w) => w && w.val !== undefined);
+  return idEntry && idEntry.val;
 }
 
 /**

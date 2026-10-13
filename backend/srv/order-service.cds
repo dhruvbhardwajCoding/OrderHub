@@ -81,6 +81,11 @@ service OrderService @(path: '/odata/v4/order')
   action proposeOrderFromText(text: String) returns ProposedOrder;
 }
 
+// ─── Draft editing (SO-08) ─────────────────────────────────────────
+// SalesOrderItems is a composition child of SalesOrders, so it becomes
+// draft-enabled automatically — no separate annotation needed.
+annotate OrderService.SalesOrders with @odata.draft.enabled;
+
 // ─── Authorisation ───────────────────────────────────────────────
 
 // SalesOrders CRUD + action permissions

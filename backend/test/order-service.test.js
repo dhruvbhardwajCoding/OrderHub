@@ -65,6 +65,22 @@ cds.env.requires.auth = {
 };
 const { GET, POST, PATCH, DELETE } = cds.test(__dirname + '/..');
 
+/* ─── SO-08 draft helpers ──────────────────────────────────────
+ * With @odata.draft.enabled, SalesOrders' key is (ID, IsActiveEntity),
+ * not just ID, and POST /SalesOrders now creates a DRAFT rather than
+ * immediately validating/pricing/numbering the order — that happens at
+ * activation (OrderService.draftActivate). Every test that needs a real,
+ * usable order (an orderNo, computed totals) goes through
+ * createActiveOrder() rather than hand-building the old one-shot POST.
+ */
+const orderUrl = (id, active = true) => `${SVC}/SalesOrders(ID=${id},IsActiveEntity=${active})`;
+
+async function createActiveOrder(payload, user = ALICE) {
+  const { data: draft } = await POST(`${SVC}/SalesOrders`, payload, user);
+  const { data } = await POST(`${orderUrl(draft.ID, false)}/OrderService.draftActivate`, {}, user);
+  return data; // the active order: orderNo assigned, totals computed
+}
+
 /* ═══════════════════════════════════════════════════════════════
  *  1. NORTHWIND READ OPERATIONS
  * ═══════════════════════════════════════════════════════════════ */
@@ -155,11 +171,10 @@ describe('Sales order creation', () => {
     ],
   });
 
-  test('POST creates a valid order with correct calculations', async () => {
-    const payload = validOrder();
-    const { status, data } = await POST(`${SVC}/SalesOrders`, payload, ALICE);
+  test('activating a draft creates a valid order with correct calculations', async () => {
+    const data = await createActiveOrder(validOrder());
 
-    expect(status).toBe(201);
+    expect(data.IsActiveEntity).toBe(true);
     expect(data.orderNo).toMatch(/^SO-\d{4}-\d{5}$/);
     expect(data.customerID).toBe('ALFKI');
     expect(data.customerName).toBe('Alfreds Futterkiste');
@@ -175,19 +190,27 @@ describe('Sales order creation', () => {
     expect(Number(data.grossAmount)).toBeCloseTo(484.28, 2);
   });
 
-  test('POST generates sequential order numbers', async () => {
-    const r1 = await POST(`${SVC}/SalesOrders`, validOrder(), ALICE);
-    const r2 = await POST(`${SVC}/SalesOrders`, validOrder(), ALICE);
-    expect(r1.data.orderNo).toMatch(/^SO-\d{4}-\d{5}$/);
-    expect(r2.data.orderNo).toMatch(/^SO-\d{4}-\d{5}$/);
-
-    // Second order number should be greater
-    expect(r2.data.orderNo > r1.data.orderNo).toBe(true);
+  test('POST (draft creation) does not assign an order number or price the order', async () => {
+    const { status, data } = await POST(`${SVC}/SalesOrders`, validOrder(), ALICE);
+    expect(status).toBe(201);
+    expect(data.IsActiveEntity).toBe(false);
+    expect(data.orderNo).toBeNull();
+    expect(data.netAmount).toBeNull();
   });
 
-  test('POST snapshots product name and unit price', async () => {
-    const { data } = await POST(`${SVC}/SalesOrders`, validOrder(), ALICE);
-    const items = (await GET(`${SVC}/SalesOrders(${data.ID})/items`, ALICE)).data.value;
+  test('activation generates sequential order numbers', async () => {
+    const r1 = await createActiveOrder(validOrder());
+    const r2 = await createActiveOrder(validOrder());
+    expect(r1.orderNo).toMatch(/^SO-\d{4}-\d{5}$/);
+    expect(r2.orderNo).toMatch(/^SO-\d{4}-\d{5}$/);
+
+    // Second order number should be greater
+    expect(r2.orderNo > r1.orderNo).toBe(true);
+  });
+
+  test('activation snapshots product name and unit price', async () => {
+    const data = await createActiveOrder(validOrder());
+    const items = (await GET(`${orderUrl(data.ID)}/items`, ALICE)).data.value;
 
     const chai = items.find((i) => i.productID === 1);
     expect(chai.productName).toBe('Chai');
@@ -203,79 +226,63 @@ describe('Sales order creation', () => {
  *  3. VALIDATION
  * ═══════════════════════════════════════════════════════════════ */
 
-describe('Server-side validation', () => {
+// SO-08: most of this validation no longer fails on POST (that only creates
+// a draft) — it fails when the draft is activated, which is where
+// validateAndPrice() (item/quantity/discount/discontinued checks) now runs.
+// The one exception is the customer check, which the draft's own before('NEW')
+// handler already runs immediately at POST time (see "Draft editing" below)
+// so the editor can show a customer name right away — a bad customerID never
+// even gets a draft created for it.
+describe('Server-side validation (at draft activation)', () => {
 
-  test('Rejects order for non-existent customer', async () => {
-    const res = await POST(`${SVC}/SalesOrders`, {
+  async function draftActivateShouldFail(payload) {
+    const { data: draft } = await POST(`${SVC}/SalesOrders`, payload, ALICE);
+    const res = await POST(`${orderUrl(draft.ID, false)}/OrderService.draftActivate`, {}, ALICE).catch((e) => e);
+    expect(res.response?.status || res.status).toBeGreaterThanOrEqual(400);
+  }
+
+  test('Rejects order for non-existent customer (fails immediately at POST, not activation)', async () => {
+    const err = await POST(`${SVC}/SalesOrders`, {
       customerID: 'ZZZZZ',
       items: [{ productID: 1, quantity: 1 }],
     }, ALICE).catch((e) => e);
-
-    expect(res.response?.status || res.status).toBeGreaterThanOrEqual(400);
+    expect(err.response?.status || err.status).toBeGreaterThanOrEqual(400);
   });
 
-  test('Rejects order for non-existent product', async () => {
-    const res = await POST(`${SVC}/SalesOrders`, {
-      customerID: 'ALFKI',
-      items: [{ productID: 99999, quantity: 1 }],
-    }, ALICE).catch((e) => e);
+  test('Rejects order for non-existent product', () => draftActivateShouldFail({
+    customerID: 'ALFKI',
+    items: [{ productID: 99999, quantity: 1 }],
+  }));
 
-    expect(res.response?.status || res.status).toBeGreaterThanOrEqual(400);
-  });
+  test('Rejects order with discontinued product', () => draftActivateShouldFail({
+    customerID: 'ALFKI',
+    items: [{ productID: 5, quantity: 1 }],
+  }));
 
-  test('Rejects order with discontinued product', async () => {
-    const res = await POST(`${SVC}/SalesOrders`, {
-      customerID: 'ALFKI',
-      items: [{ productID: 5, quantity: 1 }],
-    }, ALICE).catch((e) => e);
+  test('Rejects quantity below minimum (0)', () => draftActivateShouldFail({
+    customerID: 'ALFKI',
+    items: [{ productID: 1, quantity: 0 }],
+  }));
 
-    expect(res.response?.status || res.status).toBeGreaterThanOrEqual(400);
-  });
+  test('Rejects quantity above maximum (1000)', () => draftActivateShouldFail({
+    customerID: 'ALFKI',
+    items: [{ productID: 1, quantity: 1000 }],
+  }));
 
-  test('Rejects quantity below minimum (0)', async () => {
-    const res = await POST(`${SVC}/SalesOrders`, {
-      customerID: 'ALFKI',
-      items: [{ productID: 1, quantity: 0 }],
-    }, ALICE).catch((e) => e);
+  test('Rejects discount above maximum (26%)', () => draftActivateShouldFail({
+    customerID: 'ALFKI',
+    items: [{ productID: 1, quantity: 1, discount: 26 }],
+  }));
 
-    expect(res.response?.status || res.status).toBeGreaterThanOrEqual(400);
-  });
+  test('Rejects negative discount', () => draftActivateShouldFail({
+    customerID: 'ALFKI',
+    items: [{ productID: 1, quantity: 1, discount: -1 }],
+  }));
 
-  test('Rejects quantity above maximum (1000)', async () => {
-    const res = await POST(`${SVC}/SalesOrders`, {
-      customerID: 'ALFKI',
-      items: [{ productID: 1, quantity: 1000 }],
-    }, ALICE).catch((e) => e);
-
-    expect(res.response?.status || res.status).toBeGreaterThanOrEqual(400);
-  });
-
-  test('Rejects discount above maximum (26%)', async () => {
-    const res = await POST(`${SVC}/SalesOrders`, {
-      customerID: 'ALFKI',
-      items: [{ productID: 1, quantity: 1, discount: 26 }],
-    }, ALICE).catch((e) => e);
-
-    expect(res.response?.status || res.status).toBeGreaterThanOrEqual(400);
-  });
-
-  test('Rejects negative discount', async () => {
-    const res = await POST(`${SVC}/SalesOrders`, {
-      customerID: 'ALFKI',
-      items: [{ productID: 1, quantity: 1, discount: -1 }],
-    }, ALICE).catch((e) => e);
-
-    expect(res.response?.status || res.status).toBeGreaterThanOrEqual(400);
-  });
-
-  test('Rejects order with no items', async () => {
-    const res = await POST(`${SVC}/SalesOrders`, {
-      customerID: 'ALFKI',
-      items: [],
-    }, ALICE).catch((e) => e);
-
-    expect(res.response?.status || res.status).toBeGreaterThanOrEqual(400);
-  });
+  test('Rejects order with no items', () => draftActivateShouldFail({
+    customerID: 'ALFKI',
+    items: [],
+  }));
 });
 
 /* ═══════════════════════════════════════════════════════════════
@@ -314,25 +321,25 @@ describe('Status lifecycle — submit / approve / cancel', () => {
 
   beforeEach(async () => {
     // Create a fresh order for each test with grossAmount > 5000 so it doesn't auto-approve
-    const { data } = await POST(`${SVC}/SalesOrders`, {
+    const data = await createActiveOrder({
       customerID: 'ALFKI',
       items: [{ productID: 1, quantity: 300, discount: 0 }],
-    }, ALICE);
+    });
     orderID = data.ID;
   });
 
   test('submit transitions New → Submitted', async () => {
     const { status, data } = await POST(
-      `${SVC}/SalesOrders(${orderID})/OrderService.submit`, {}, ALICE
+      `${orderUrl(orderID)}/OrderService.submit`, {}, ALICE
     );
     expect(status).toBe(200);
     expect(data.status).toBe('Submitted');
   });
 
   test('approve transitions Submitted → Approved', async () => {
-    await POST(`${SVC}/SalesOrders(${orderID})/OrderService.submit`, {}, ALICE);
+    await POST(`${orderUrl(orderID)}/OrderService.submit`, {}, ALICE);
     const { status, data } = await POST(
-      `${SVC}/SalesOrders(${orderID})/OrderService.approve`, {}, BOB
+      `${orderUrl(orderID)}/OrderService.approve`, {}, BOB
     );
     expect(status).toBe(200);
     expect(data.status).toBe('Approved');
@@ -340,16 +347,16 @@ describe('Status lifecycle — submit / approve / cancel', () => {
 
   test('cancel transitions New → Cancelled', async () => {
     const { status, data } = await POST(
-      `${SVC}/SalesOrders(${orderID})/OrderService.cancel`, {}, ALICE
+      `${orderUrl(orderID)}/OrderService.cancel`, {}, ALICE
     );
     expect(status).toBe(200);
     expect(data.status).toBe('Cancelled');
   });
 
   test('cancel transitions Submitted → Cancelled', async () => {
-    await POST(`${SVC}/SalesOrders(${orderID})/OrderService.submit`, {}, ALICE);
+    await POST(`${orderUrl(orderID)}/OrderService.submit`, {}, ALICE);
     const { status, data } = await POST(
-      `${SVC}/SalesOrders(${orderID})/OrderService.cancel`, {}, BOB
+      `${orderUrl(orderID)}/OrderService.cancel`, {}, BOB
     );
     expect(status).toBe(200);
     expect(data.status).toBe('Cancelled');
@@ -358,25 +365,25 @@ describe('Status lifecycle — submit / approve / cancel', () => {
   /* ── invalid transitions ─────────────────────────────────── */
 
   test('cannot submit an already-submitted order', async () => {
-    await POST(`${SVC}/SalesOrders(${orderID})/OrderService.submit`, {}, ALICE);
+    await POST(`${orderUrl(orderID)}/OrderService.submit`, {}, ALICE);
     const err = await POST(
-      `${SVC}/SalesOrders(${orderID})/OrderService.submit`, {}, ALICE
+      `${orderUrl(orderID)}/OrderService.submit`, {}, ALICE
     ).catch((e) => e);
     expect(err.response?.status || err.status).toBeGreaterThanOrEqual(400);
   });
 
   test('cannot approve a New order (must be Submitted first)', async () => {
     const err = await POST(
-      `${SVC}/SalesOrders(${orderID})/OrderService.approve`, {}, BOB
+      `${orderUrl(orderID)}/OrderService.approve`, {}, BOB
     ).catch((e) => e);
     expect(err.response?.status || err.status).toBeGreaterThanOrEqual(400);
   });
 
   test('cannot cancel an Approved order', async () => {
-    await POST(`${SVC}/SalesOrders(${orderID})/OrderService.submit`, {}, ALICE);
-    await POST(`${SVC}/SalesOrders(${orderID})/OrderService.approve`, {}, BOB);
+    await POST(`${orderUrl(orderID)}/OrderService.submit`, {}, ALICE);
+    await POST(`${orderUrl(orderID)}/OrderService.approve`, {}, BOB);
     const err = await POST(
-      `${SVC}/SalesOrders(${orderID})/OrderService.cancel`, {}, ALICE
+      `${orderUrl(orderID)}/OrderService.cancel`, {}, ALICE
     ).catch((e) => e);
     expect(err.response?.status || err.status).toBeGreaterThanOrEqual(400);
   });
@@ -393,41 +400,166 @@ describe('Order deletion (SO-01)', () => {
   beforeEach(async () => {
     // quantity 300 → grossAmount > APPROVAL_THRESHOLD, so submit() leaves it
     // 'Submitted' rather than auto-approving (matches the lifecycle tests above).
-    const { data } = await POST(`${SVC}/SalesOrders`, {
+    const data = await createActiveOrder({
       customerID: 'ALFKI',
       items: [{ productID: 1, quantity: 300, discount: 0 }],
-    }, ALICE);
+    });
     orderID = data.ID;
   });
 
   test('SalesRep can delete a New order', async () => {
-    const { status } = await DELETE(`${SVC}/SalesOrders(${orderID})`, ALICE);
+    const { status } = await DELETE(orderUrl(orderID), ALICE);
     expect(status).toBe(204);
 
-    const err = await GET(`${SVC}/SalesOrders(${orderID})`, ALICE).catch((e) => e);
+    const err = await GET(orderUrl(orderID), ALICE).catch((e) => e);
     expect(err.response?.status || err.status).toBe(404);
   });
 
   test('cannot delete a Submitted order', async () => {
-    await POST(`${SVC}/SalesOrders(${orderID})/OrderService.submit`, {}, ALICE);
-    const err = await DELETE(`${SVC}/SalesOrders(${orderID})`, ALICE).catch((e) => e);
+    await POST(`${orderUrl(orderID)}/OrderService.submit`, {}, ALICE);
+    const err = await DELETE(orderUrl(orderID), ALICE).catch((e) => e);
     expect(err.response?.status || err.status).toBe(409);
   });
 
   test('cannot delete an Approved order', async () => {
-    await POST(`${SVC}/SalesOrders(${orderID})/OrderService.submit`, {}, ALICE);
-    await POST(`${SVC}/SalesOrders(${orderID})/OrderService.approve`, {}, BOB);
-    const err = await DELETE(`${SVC}/SalesOrders(${orderID})`, ALICE).catch((e) => e);
+    await POST(`${orderUrl(orderID)}/OrderService.submit`, {}, ALICE);
+    await POST(`${orderUrl(orderID)}/OrderService.approve`, {}, BOB);
+    const err = await DELETE(orderUrl(orderID), ALICE).catch((e) => e);
     expect(err.response?.status || err.status).toBe(409);
   });
 
   test('SalesManager cannot delete an order (not granted)', async () => {
-    const err = await DELETE(`${SVC}/SalesOrders(${orderID})`, BOB).catch((e) => e);
+    const err = await DELETE(orderUrl(orderID), BOB).catch((e) => e);
     expect(err.response?.status || err.status).toBe(403);
   });
 
   test('BillingClerk cannot delete an order (not granted)', async () => {
-    const err = await DELETE(`${SVC}/SalesOrders(${orderID})`, CAROL).catch((e) => e);
+    const err = await DELETE(orderUrl(orderID), CAROL).catch((e) => e);
+    expect(err.response?.status || err.status).toBe(403);
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════
+ *  5c. DRAFT EDITING (SO-08)
+ * ═══════════════════════════════════════════════════════════════ */
+
+describe('Draft editing (SO-08)', () => {
+
+  test('POST creates a draft, not an order — no order number, not active', async () => {
+    const { status, data } = await POST(`${SVC}/SalesOrders`, {
+      customerID: 'ALFKI', items: [{ productID: 1, quantity: 5 }],
+    }, ALICE);
+    expect(status).toBe(201);
+    expect(data.IsActiveEntity).toBe(false);
+    expect(data.orderNo).toBeNull();
+  });
+
+  test('starting a draft validates and snapshots the customer immediately', async () => {
+    const bad = await POST(`${SVC}/SalesOrders`, { customerID: 'ZZZZZ' }, ALICE).catch((e) => e);
+    expect(bad.response?.status || bad.status).toBe(400);
+
+    const { data: good } = await POST(`${SVC}/SalesOrders`, { customerID: 'ALFKI' }, ALICE);
+    expect(good.customerName).toBe('Alfreds Futterkiste');
+  });
+
+  // "Activating a valid draft assigns an order number, computes totals, and
+  // sets status: 'New'" is exactly what createActiveOrder() does and is
+  // already covered by the "Sales order creation" describe block above —
+  // not repeated here.
+
+  test('activating an invalid draft rejects with 400 and leaves the draft intact', async () => {
+    const { data: draft } = await POST(`${SVC}/SalesOrders`, {
+      customerID: 'ALFKI', items: [{ productID: 1, quantity: 0 }], // qty 0 is invalid
+    }, ALICE);
+
+    const err = await POST(`${orderUrl(draft.ID, false)}/OrderService.draftActivate`, {}, ALICE).catch((e) => e);
+    expect(err.response?.status || err.status).toBe(400);
+
+    const { data: stillDraft } = await GET(orderUrl(draft.ID, false), ALICE);
+    expect(stillDraft.IsActiveEntity).toBe(false);
+  });
+
+  test('adding a draft item fills in product name/price and updates the draft header totals', async () => {
+    const { data: draft } = await POST(`${SVC}/SalesOrders`, { customerID: 'ALFKI' }, ALICE);
+
+    const { data: item } = await POST(`${orderUrl(draft.ID, false)}/items`, { productID: 1, quantity: 5 }, ALICE);
+    expect(item.productName).toBe('Chai');
+    expect(Number(item.unitPrice)).toBe(18);
+    expect(Number(item.netAmount)).toBeCloseTo(90, 2);
+
+    const { data: header } = await GET(orderUrl(draft.ID, false), ALICE);
+    expect(Number(header.netAmount)).toBeCloseTo(90, 2);
+  });
+
+  test('editing a New order: draftEdit → patch an item → activate recomputes totals, keeps the order number', async () => {
+    const original = await createActiveOrder({
+      customerID: 'ALFKI', items: [{ productID: 1, quantity: 5 }],
+    });
+    expect(Number(original.netAmount)).toBeCloseTo(90, 2);
+
+    await POST(`${orderUrl(original.ID)}/OrderService.draftEdit`, { PreserveChanges: true }, ALICE);
+    const { data: items } = await GET(`${orderUrl(original.ID, false)}/items`, ALICE);
+    await PATCH(`${SVC}/SalesOrderItems(ID=${items.value[0].ID},IsActiveEntity=false)`, { quantity: 10 }, ALICE);
+
+    const { data: activated } = await POST(`${orderUrl(original.ID, false)}/OrderService.draftActivate`, {}, ALICE);
+    expect(activated.orderNo).toBe(original.orderNo); // unchanged
+    expect(Number(activated.netAmount)).toBeCloseTo(180, 2); // 18 * 10
+  });
+
+  test('draftEdit on a Submitted order is rejected', async () => {
+    const order = await createActiveOrder({
+      customerID: 'ALFKI', items: [{ productID: 1, quantity: 300 }], // above threshold, stays Submitted
+    });
+    await POST(`${orderUrl(order.ID)}/OrderService.submit`, {}, ALICE);
+
+    const err = await POST(`${orderUrl(order.ID)}/OrderService.draftEdit`, { PreserveChanges: true }, ALICE).catch((e) => e);
+    expect(err.response?.status || err.status).toBe(409);
+  });
+
+  test('submit on a draft key is rejected — must activate first', async () => {
+    const { data: draft } = await POST(`${SVC}/SalesOrders`, {
+      customerID: 'ALFKI', items: [{ productID: 1, quantity: 1 }],
+    }, ALICE);
+
+    const err = await POST(`${orderUrl(draft.ID, false)}/OrderService.submit`, {}, ALICE).catch((e) => e);
+    expect(err.response?.status || err.status).toBe(409);
+  });
+
+  test('discarding a draft edit leaves the active order unchanged', async () => {
+    const order = await createActiveOrder({
+      customerID: 'ALFKI', items: [{ productID: 1, quantity: 5 }],
+    });
+    await POST(`${orderUrl(order.ID)}/OrderService.draftEdit`, { PreserveChanges: true }, ALICE);
+    const { data: items } = await GET(`${orderUrl(order.ID, false)}/items`, ALICE);
+    await PATCH(`${SVC}/SalesOrderItems(ID=${items.value[0].ID},IsActiveEntity=false)`, { quantity: 99 }, ALICE);
+
+    await DELETE(orderUrl(order.ID, false), ALICE); // discard the edit, not the order
+
+    const { data: stillActive } = await GET(orderUrl(order.ID), ALICE);
+    expect(Number(stillActive.netAmount)).toBeCloseTo(Number(order.netAmount), 2); // unchanged
+  });
+
+  test('deleting an active New order still works (SO-01 regression)', async () => {
+    const order = await createActiveOrder({ customerID: 'ALFKI', items: [{ productID: 1, quantity: 1 }] });
+    const { status } = await DELETE(orderUrl(order.ID), ALICE);
+    expect(status).toBe(204);
+  });
+
+  test('SalesManager cannot start a new order', async () => {
+    const err = await POST(`${SVC}/SalesOrders`, { customerID: 'ALFKI' }, BOB).catch((e) => e);
+    expect(err.response?.status || err.status).toBe(403);
+  });
+
+  test('BillingClerk cannot start a new order', async () => {
+    const err = await POST(`${SVC}/SalesOrders`, { customerID: 'ALFKI' }, CAROL).catch((e) => e);
+    expect(err.response?.status || err.status).toBe(403);
+  });
+
+  test('SalesManager cannot edit an existing order', async () => {
+    const order = await createActiveOrder({
+      customerID: 'ALFKI', items: [{ productID: 1, quantity: 1 }],
+    });
+    const err = await POST(`${orderUrl(order.ID)}/OrderService.draftEdit`, { PreserveChanges: true }, BOB).catch((e) => e);
     expect(err.response?.status || err.status).toBe(403);
   });
 });
@@ -440,25 +572,25 @@ describe('Approval threshold auto-approve', () => {
 
   test(`Order <= ${APPROVAL_THRESHOLD} auto-approved on submit`, async () => {
     // 18 * 2 = 36, gross ~ 39.60 (well under threshold)
-    const { data } = await POST(`${SVC}/SalesOrders`, {
+    const data = await createActiveOrder({
       customerID: 'ALFKI', items: [{ productID: 1, quantity: 2, discount: 0 }]
-    }, ALICE);
+    });
     const { data: submitted } = await POST(
-      `${SVC}/SalesOrders(${data.ID})/OrderService.submit`, {}, ALICE
+      `${orderUrl(data.ID)}/OrderService.submit`, {}, ALICE
     );
     expect(submitted.status).toBe('Approved'); // auto-approved
   });
 
   test(`Orders above ${APPROVAL_THRESHOLD} stays Submitted on submit`, async () => {
     // 18.00 * 300 = 5400 (above threshold)
-    const { data } = await POST(`${SVC}/SalesOrders`, {
+    const data = await createActiveOrder({
       customerID: 'ALFKI',
       items: [{ productID: 1, quantity: 300, discount: 0 }],
-    }, ALICE);
+    });
     expect(Number(data.grossAmount)).toBeGreaterThan(APPROVAL_THRESHOLD);
 
     const submitted = await POST(
-      `${SVC}/SalesOrders(${data.ID})/OrderService.submit`, {}, ALICE
+      `${orderUrl(data.ID)}/OrderService.submit`, {}, ALICE
     );
     expect(submitted.data.status).toBe('Submitted'); // needs manager
   });
@@ -473,44 +605,49 @@ describe('Additional invalid transitions & direct PATCH', () => {
   let orderID;
 
   beforeEach(async () => {
-    const { data } = await POST(`${SVC}/SalesOrders`, {
+    const data = await createActiveOrder({
       customerID: 'ALFKI',
       items: [{ productID: 1, quantity: 300, discount: 0 }],
-    }, ALICE);
+    });
     orderID = data.ID;
   });
 
   test('Approved → approve() rejected', async () => {
-    await POST(`${SVC}/SalesOrders(${orderID})/OrderService.submit`, {}, ALICE);
-    await POST(`${SVC}/SalesOrders(${orderID})/OrderService.approve`, {}, BOB);
-    const err = await POST(`${SVC}/SalesOrders(${orderID})/OrderService.approve`, {}, BOB).catch((e) => e);
+    await POST(`${orderUrl(orderID)}/OrderService.submit`, {}, ALICE);
+    await POST(`${orderUrl(orderID)}/OrderService.approve`, {}, BOB);
+    const err = await POST(`${orderUrl(orderID)}/OrderService.approve`, {}, BOB).catch((e) => e);
     expect(err.response?.status || err.status).toBeGreaterThanOrEqual(400);
   });
 
   test('Approved → submit() rejected', async () => {
-    await POST(`${SVC}/SalesOrders(${orderID})/OrderService.submit`, {}, ALICE);
-    await POST(`${SVC}/SalesOrders(${orderID})/OrderService.approve`, {}, BOB);
-    const err = await POST(`${SVC}/SalesOrders(${orderID})/OrderService.submit`, {}, ALICE).catch((e) => e);
+    await POST(`${orderUrl(orderID)}/OrderService.submit`, {}, ALICE);
+    await POST(`${orderUrl(orderID)}/OrderService.approve`, {}, BOB);
+    const err = await POST(`${orderUrl(orderID)}/OrderService.submit`, {}, ALICE).catch((e) => e);
     expect(err.response?.status || err.status).toBeGreaterThanOrEqual(400);
   });
 
   test('Cancelled transitions rejected', async () => {
-    await POST(`${SVC}/SalesOrders(${orderID})/OrderService.cancel`, {}, ALICE);
-    let err = await POST(`${SVC}/SalesOrders(${orderID})/OrderService.submit`, {}, ALICE).catch((e) => e);
+    await POST(`${orderUrl(orderID)}/OrderService.cancel`, {}, ALICE);
+    let err = await POST(`${orderUrl(orderID)}/OrderService.submit`, {}, ALICE).catch((e) => e);
     expect(err.response?.status || err.status).toBeGreaterThanOrEqual(400);
 
-    err = await POST(`${SVC}/SalesOrders(${orderID})/OrderService.approve`, {}, BOB).catch((e) => e);
+    err = await POST(`${orderUrl(orderID)}/OrderService.approve`, {}, BOB).catch((e) => e);
     expect(err.response?.status || err.status).toBeGreaterThanOrEqual(400);
 
-    err = await POST(`${SVC}/SalesOrders(${orderID})/OrderService.cancel`, {}, ALICE).catch((e) => e);
+    err = await POST(`${orderUrl(orderID)}/OrderService.cancel`, {}, ALICE).catch((e) => e);
     expect(err.response?.status || err.status).toBeGreaterThanOrEqual(400);
   });
 
-  test('PATCH status directly is rejected (@readonly)', async () => {
-    await PATCH(`${SVC}/SalesOrders(${orderID})`, { status: 'Approved' }, ALICE).catch((e) => e);
-    // Depending on CAP version, updating a @readonly field might be ignored or throw an error.
-    // We verify the status hasn't actually changed.
-    const { data } = await GET(`${SVC}/SalesOrders(${orderID})`, ALICE);
+  // SO-08: direct PATCH of an active order is now rejected outright by CAP's
+  // draft machinery itself (draft-enabled actives are read-only unless
+  // cds.fiori.bypass_draft is set, which this project deliberately doesn't
+  // set — edits go through a draft, see "Draft editing (SO-08)" below), so
+  // this is now a stronger guarantee than the old @readonly-only check.
+  test('PATCH status directly is rejected', async () => {
+    const err = await PATCH(orderUrl(orderID), { status: 'Approved' }, ALICE).catch((e) => e);
+    expect(err.response?.status || err.status).toBeGreaterThanOrEqual(400);
+
+    const { data } = await GET(orderUrl(orderID), ALICE);
     expect(data.status).toBe('New');
   });
 });
@@ -521,9 +658,12 @@ describe('Additional invalid transitions & direct PATCH', () => {
 
 describe('OData query support', () => {
   beforeAll(async () => {
-    await POST(`${SVC}/SalesOrders`, { customerID: 'ALFKI', items: [{ productID: 1, quantity: 1 }] }, ALICE);
-    await POST(`${SVC}/SalesOrders`, { customerID: 'ALFKI', items: [{ productID: 14, quantity: 2 }] }, ALICE);
-    await POST(`${SVC}/SalesOrders`, { customerID: 'ALFKI', items: [{ productID: 1, quantity: 3 }] }, ALICE);
+    // Active orders only — a plain GET/$filter/$orderby/$count already
+    // excludes drafts by default (verified live), so these go through
+    // activation to land in the set these queries are checking.
+    await createActiveOrder({ customerID: 'ALFKI', items: [{ productID: 1, quantity: 1 }] });
+    await createActiveOrder({ customerID: 'ALFKI', items: [{ productID: 14, quantity: 2 }] });
+    await createActiveOrder({ customerID: 'ALFKI', items: [{ productID: 1, quantity: 3 }] });
   });
 
   test('$top and $skip pagination', async () => {
@@ -560,10 +700,10 @@ describe('OData query support', () => {
 describe('Order number generation', () => {
 
   test('Order number matches SO-YYYY-NNNNN pattern', async () => {
-    const { data } = await POST(`${SVC}/SalesOrders`, {
+    const data = await createActiveOrder({
       customerID: 'ALFKI',
       items: [{ productID: 1, quantity: 1 }],
-    }, ALICE);
+    });
     expect(data.orderNo).toMatch(/^SO-\d{4}-\d{5}$/);
   });
 });
@@ -578,49 +718,49 @@ describe('Billing Clerk - Invoice operations', () => {
 
   beforeEach(async () => {
     // Create, Submit, Approve an order
-    const { data } = await POST(`${SVC}/SalesOrders`, {
+    const data = await createActiveOrder({
       customerID: 'ALFKI', items: [{ productID: 1, quantity: 1, discount: 0 }]
-    }, ALICE);
+    });
     orderID = data.ID;
-    
+
     // ALFKI + 1 item = small amount, so it auto-approves.
-    await POST(`${SVC}/SalesOrders(${orderID})/OrderService.submit`, {}, ALICE);
+    await POST(`${orderUrl(orderID)}/OrderService.submit`, {}, ALICE);
   });
 
   test('BillingClerk can create invoice for Approved order', async () => {
-    const { status, data } = await POST(`${SVC}/SalesOrders(${orderID})/OrderService.createInvoice`, {}, CAROL);
+    const { status, data } = await POST(`${orderUrl(orderID)}/OrderService.createInvoice`, {}, CAROL);
     expect(status).toBe(200);
     expect(data.invoiceNo).toMatch(/^INV-\d{4}-\d{5}$/);
     expect(data.mailStatus).toBe('PENDING');
 
     // Order status should be Invoiced
-    const { data: order } = await GET(`${SVC}/SalesOrders(${orderID})`, ALICE);
+    const { data: order } = await GET(orderUrl(orderID), ALICE);
     expect(order.status).toBe('Invoiced');
   });
 
   test('BillingClerk can send invoice email (fails gracefully for mock customer)', async () => {
-    await POST(`${SVC}/SalesOrders(${orderID})/OrderService.createInvoice`, {}, CAROL);
-    
+    await POST(`${orderUrl(orderID)}/OrderService.createInvoice`, {}, CAROL);
+
     // getCustomer returns { CustomerID: 'ALFKI', CompanyName: 'Alfreds Futterkiste' }
     // No email is present, so it should fail gracefully
-    const err = await POST(`${SVC}/SalesOrders(${orderID})/OrderService.sendInvoice`, {}, CAROL).catch(e => e);
-    
+    const err = await POST(`${orderUrl(orderID)}/OrderService.sendInvoice`, {}, CAROL).catch(e => e);
+
     expect(err.response?.status || err.status).toBeGreaterThanOrEqual(400);
     const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
     expect(msg).toMatch(/Customer has no usable email/);
-    
+
     // Check if mailStatus was updated to FAILED
     const { data: invoice } = await GET(`${SVC}/Invoices?$filter=order_ID eq '${orderID}'`, CAROL);
     expect(invoice.value[0].mailStatus).toBe('FAILED');
   });
 
   test('BillingClerk can send invoice using an overridden recipient email', async () => {
-    await POST(`${SVC}/SalesOrders(${orderID})/OrderService.createInvoice`, {}, CAROL);
+    await POST(`${orderUrl(orderID)}/OrderService.createInvoice`, {}, CAROL);
 
     // ALFKI has no Email in Northwind; the UI pre-fills <customerID>@example.test
     // and the clerk can edit/confirm it — passed through as the `email` param.
     const { status, data } = await POST(
-      `${SVC}/SalesOrders(${orderID})/OrderService.sendInvoice`,
+      `${orderUrl(orderID)}/OrderService.sendInvoice`,
       { email: 'ALFKI@example.test' },
       CAROL
     );
@@ -631,10 +771,10 @@ describe('Billing Clerk - Invoice operations', () => {
   });
 
   test('sendInvoice rejects a malformed overridden email', async () => {
-    await POST(`${SVC}/SalesOrders(${orderID})/OrderService.createInvoice`, {}, CAROL);
+    await POST(`${orderUrl(orderID)}/OrderService.createInvoice`, {}, CAROL);
 
     const err = await POST(
-      `${SVC}/SalesOrders(${orderID})/OrderService.sendInvoice`,
+      `${orderUrl(orderID)}/OrderService.sendInvoice`,
       { email: 'not-an-email' },
       CAROL
     ).catch(e => e);
@@ -645,10 +785,10 @@ describe('Billing Clerk - Invoice operations', () => {
   });
 
   test('SalesRep cannot create or send invoices', async () => {
-    let err = await POST(`${SVC}/SalesOrders(${orderID})/OrderService.createInvoice`, {}, ALICE).catch(e => e);
+    let err = await POST(`${orderUrl(orderID)}/OrderService.createInvoice`, {}, ALICE).catch(e => e);
     expect(err.response?.status || err.status).toBe(403);
 
-    err = await POST(`${SVC}/SalesOrders(${orderID})/OrderService.sendInvoice`, {}, ALICE).catch(e => e);
+    err = await POST(`${orderUrl(orderID)}/OrderService.sendInvoice`, {}, ALICE).catch(e => e);
     expect(err.response?.status || err.status).toBe(403);
   });
 });
