@@ -402,17 +402,17 @@ orderHub/
   - [x] Role-based access control (SalesRep, SalesManager, BillingClerk)
   - [x] Automated test suite with mocked in-memory database and test fixtures
   - [x] Northwind call timeout (MD-04) and in-memory master-data cache (MD-05) — see `srv/lib/northwind.js` / `northwind-cache.js`
-- [x] **Phase 2: SAPUI5 Application** (map visualization and `@odata.draft.enabled` still pending)
+- [x] **Phase 2: SAPUI5 Application**
   - [x] SAPUI5 frontend: dashboard, customer map/list, product list, sales order list and object page
   - [x] Role-aware action buttons (submit/approve/cancel/createInvoice/sendInvoice) driven by `/user-api/currentUser`
   - [x] Dashboard KPI tiles, revenue-by-country/category charts and a top-5-customers table, all server-aggregated via `AnalyticsService` (AN-01, AN-02, AN-03) — see `srv/analytics-service.cds`/`.js`
-  - [ ] OpenStreetMap-based customer map (`sap.ui.mdc.Geomap` or an approved fallback) — not started
-  - [ ] Draft enablement (`@odata.draft.enabled`) — not started
-- [x] **Phase 3: Invoicing & Communications** (AI capabilities still pending)
+  - [x] OpenStreetMap-based customer map — `orderhub.control.LeafletMap`, a real UI5 control (MAP-01 to MAP-04; see DECISIONS.md ADR 23)
+  - [x] Draft enablement (`@odata.draft.enabled`) — SO-08; see DECISIONS.md ADR 27
+- [x] **Phase 3: Invoicing & Communications**
   - [x] PDF invoice generation (`pdfmake`) with Bill-To/Seller blocks, line items, totals, due date and page footer
   - [x] Invoice storage behind `local`/`sdm` (SAP Document Management, Integration Option) — see [Invoice Storage](#invoice-storage-local-vs-sap-document-management)
   - [x] Email dispatch (`nodemailer`) with a review-before-send dialog and FAILED/SENT tracking
-  - [ ] AI integration (Order Assistant / Sales Q&A / Invoice Email Writer) — intentionally deferred to last
+  - [x] AI integration — "order from text" (AI-01, AI-02; see DECISIONS.md ADR 24)
 
 ---
 
@@ -441,7 +441,7 @@ Status against the assessment brief's requirement IDs (section 5). ✅ done · �
 | SO-05 | Server-generated order number `SO-YYYY-NNNNN` | ✅ | |
 | SO-06 | Status changes only through bound actions | ✅ | `status` is `@readonly`; a direct `PATCH` is rejected (tested) |
 | SO-07 | Orders over 5,000 need manager approval before invoicing | ✅ | |
-| SO-08 (Should) | Draft editing (`@odata.draft.enabled`) | ⬜ | Not started |
+| SO-08 (Should) | Draft editing (`@odata.draft.enabled`) | ✅ | `OrderService.SalesOrders` is draft-enabled; one editor screen (`OrderDraft`) for both new and edited orders, saving as you type; validation/pricing runs once, at activation — see DECISIONS.md ADR 27 |
 | SO-09 (Should) | Warn when quantity exceeds `UnitsInStock` | ✅ | Server emits the warning (`req.warn`, tested); create-order UI shows a per-row warning badge, including for items pre-filled from the AI assistant |
 
 ### Map
@@ -484,7 +484,7 @@ Status against the assessment brief's requirement IDs (section 5). ✅ done · �
 | Setup | `git clone`, `npm install`, copy `.env.example`, `cds watch` starts it, `npm test` runs all tests | ✅ | Backend and frontend are now two separate npm projects (`backend/`, `frontend/`) — see [Getting Started](#getting-started); each step above happens once per folder |
 | Security | Mocked auth, 3 users/roles, `@requires`/`@restrict` | ✅ | `kind: 'mocked'` (see DECISIONS.md ADR 14 for why `kind: 'dummy'` doesn't work) |
 | Secrets | No keys/passwords/tokens in the repo or its history | ✅ | All via env vars, documented in `.env.example` |
-| Tests | 10+ `cds.test` tests across the listed categories, incl. PDF bytes starting with `%PDF` | ✅ | 122 tests; `test/pdf.test.js` checks the literal `%PDF` requirement against the real, unmocked generator |
+| Tests | 10+ `cds.test` tests across the listed categories, incl. PDF bytes starting with `%PDF` | ✅ | 136 tests; `test/pdf.test.js` checks the literal `%PDF` requirement against the real, unmocked generator |
 | Offline tests | No real Northwind/LLM/Document Management calls in tests | ✅ | `[test]` profile + CSV fixtures for Northwind; `sdm-client`/`pdf` mocked where needed |
 | Geocoding | Nominatim rate limit, User-Agent, `CustomerGeo` cache | ✅ | `srv/lib/geocode.js` — 1 req/sec throttle, descriptive `GEOCODE_USER_AGENT`, cached in `CustomerGeo` |
 | Performance | Server-side paging; no full-dataset loads; <3s per screen | ✅ | OData `$top`/`$skip` paging is in place; measured live against the real running server — SalesOrders list ~13ms, dashboard KPIs ~10–30ms (cached), cold (uncached) Northwind Products read ~1.6s (one remote round trip, then ~9ms cached), Customer Map ~0.4s — all well under 3s |
@@ -496,13 +496,11 @@ Status against the assessment brief's requirement IDs (section 5). ✅ done · �
 
 ## Screenshots
 
-_To be added — this environment has no browser access to capture them. See `dashboard.png` (shared during development) for the dashboard; the remaining screens (customer map, customer detail, products, sales orders list, sales order object page, create order) still need screenshots before submission._
+_To be added — not embedded in this file yet, though every screen listed below has since been visually verified in a real browser (headless Chromium via Playwright) during development. See `dashboard.png` (shared during development) for the dashboard; the remaining screens (customer map, customer detail, products, sales orders list, sales order object page, the order draft editor) still need screenshots added here before submission._
 
 ---
 
 ## Known Limitations
 
-- **Draft editing** (SO-08, Should) is deliberately not implemented. `SalesOrders` already has a hand-built state machine (`submit`/`approve`/`cancel`/`createInvoice`/`sendInvoice`) and a tested create flow built around active entities; grafting `@odata.draft.enabled` on top is a real architectural change (draft-indicator UI, a `draftActivate` handshake, re-validating every action against draft semantics), not a metadata flag flip, and risks destabilizing a complete, tested feature set for a bonus requirement. A deliberate, scoped-out decision, not an oversight.
 - **DMS-06** (showing the `sdm` invoice store against a real SAP Document Management instance via `cds bind`) could not be completed — this assessment has no SAP BTP account. `npm run demo:hybrid` exercises the same code path against a mocked CMIS endpoint instead; see DECISIONS.md ADR 19.
-- **AI-01/AI-02** were verified against the real `proposeOrderFromText` HTTP endpoint (response shape, AI-02's no-key degradation, and a full extraction→Northwind-matching round trip against a mocked Gemini response) but not against the real Gemini API — this environment has no `GEMINI_API_KEY`. Add one to `.env` (see `.env.example`) to exercise the real extraction path.
-- The dashboard and customer map were visually verified in a real browser during development (including fixing a `layoutData` namespace bug and an `HBox`-vs-percentage-width sizing bug on the map — see DECISIONS.md ADR 23). The AI assistant dialog's rendering has only been verified at the API/data level, not visually in a browser.
+- Everything else in the requirement checklist — including AI-01/AI-02 against the real Gemini API, the customer map, and SO-08's draft editor — has been verified end to end in a real browser (headless Chromium via Playwright), not just against mocked responses or curl. See the relevant ADR in DECISIONS.md for what each verification actually covered.
