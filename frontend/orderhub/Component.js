@@ -5,12 +5,12 @@ sap.ui.define([
 ], function (UIComponent, Device, JSONModel) {
     "use strict";
 
-    // The backend now runs as its own CAP server on a different origin (see
-    // backend/srv/server.js's CORS setup) instead of serving this app itself.
-    // Keep this in sync with manifest.json's dataSources and the invoice
-    // download URL in SalesOrder.controller.js if you change the backend's
-    // host/port.
-    var BACKEND_URL = "http://localhost:4004";
+    // Relative on purpose: locally, frontend/server.js proxies /user-api
+    // (and /odata) to the real backend; in production, the App Router does
+    // the same proxying from the same origin. Keep in sync with
+    // manifest.json's dataSources and the invoice download URL in
+    // SalesOrder.controller.js.
+    var BACKEND_URL = "";
 
     return UIComponent.extend("orderhub.Component", {
         metadata: {
