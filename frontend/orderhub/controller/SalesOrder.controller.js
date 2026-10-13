@@ -33,8 +33,11 @@ sap.ui.define([
             this.byId("btnCancel").setVisible(false);
 
             var oView = this.getView();
+            // SO-08: SalesOrders' key is now (ID, IsActiveEntity) — always bind
+            // to the active instance here; drafts get their own route/view
+            // (orderDraft).
             oView.bindElement({
-                path: "/SalesOrders(" + sOrderID + ")",
+                path: "/SalesOrders(ID=" + sOrderID + ",IsActiveEntity=true)",
                 parameters: {
                     $expand: "items,invoice"
                 },

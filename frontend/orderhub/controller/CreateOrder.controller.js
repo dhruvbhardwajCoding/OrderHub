@@ -167,8 +167,17 @@ sap.ui.define([
             var oModel = this.getView().getModel();
             var oListBinding = oModel.bindList("/SalesOrders");
             var oContext = oListBinding.create(oPayload);
-            
+
+            // SO-08: POST only creates a draft now — activate it immediately
+            // so this screen still behaves like a one-shot "create" to the
+            // rest of the app. (Temporary: Phase 3 replaces this whole
+            // screen with a proper draft editor that saves as you type.)
+            // The draft and the activated order share the same ID, so there's
+            // no need to read it back from the activation result.
             oContext.created().then(function () {
+                var oActivate = oModel.bindContext("OrderService.draftActivate(...)", oContext);
+                return oActivate.execute();
+            }).then(function () {
                 BusyIndicator.hide();
                 MessageToast.show("Order created successfully.");
                 that.getOwnerComponent().getRouter().navTo("salesOrder", { orderID: oContext.getProperty("ID") });
@@ -205,14 +214,29 @@ sap.ui.define([
             var oModel = this.getView().getModel();
             var oListBinding = oModel.bindList("/SalesOrders");
             var oContext = oListBinding.create(oPayload);
-            
+            var sOrderID;
+
+            // SO-08: POST creates a draft, so activate it first, then submit
+            // the now-active order. Activation merges the draft into the
+            // active row under the same ID and the draft row is gone, so
+            // oContext (still pointed at the draft) can't be reused for the
+            // submit action — bind fresh to the active instance instead, the
+            // same path _onPatternMatched uses on the object page.
+            // (Temporary: Phase 3 replaces this whole screen.)
             oContext.created().then(function () {
-                var oAction = oModel.bindContext("OrderService.submit(...)", oContext);
-                return oAction.execute();
+                sOrderID = oContext.getProperty("ID");
+                var oActivate = oModel.bindContext("OrderService.draftActivate(...)", oContext);
+                return oActivate.execute();
+            }).then(function () {
+                var oActiveBinding = oModel.bindContext("/SalesOrders(ID=" + sOrderID + ",IsActiveEntity=true)");
+                return oActiveBinding.requestObject().then(function () {
+                    var oAction = oModel.bindContext("OrderService.submit(...)", oActiveBinding.getBoundContext());
+                    return oAction.execute();
+                });
             }).then(function () {
                 BusyIndicator.hide();
                 MessageToast.show("Order submitted successfully.");
-                that.getOwnerComponent().getRouter().navTo("salesOrder", { orderID: oContext.getProperty("ID") });
+                that.getOwnerComponent().getRouter().navTo("salesOrder", { orderID: sOrderID });
             }).catch(function (oError) {
                 BusyIndicator.hide();
                 MessageBox.error(oError.message || "Failed to submit order.");
