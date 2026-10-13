@@ -46,26 +46,35 @@
                     </layoutData>
                     <custom:LeafletMap id="map" width="100%" height="65vh" spotPress=".onSpotPress" />
                 </VBox>
-                <VBox class="ohMap">
+                <VBox class="ohMap" height="65vh" renderType="Bare">
                     <layoutData>
                         <layout:GridData span="L3 M4 S12" />
                     </layoutData>
                     <Toolbar design="Transparent">
+                        <layoutData>
+                            <FlexItemData shrinkFactor="0" />
+                        </layoutData>
                         <Title text="{parts: ['i18n>inView', 'map>/visibleCount'], formatter: '.formatter.inViewTitle'}" level="H4" />
                     </Toolbar>
-                    <List id="customerList" items="{map>/customers}" mode="None" growing="true" growingThreshold="20">
-                        <items>
-                            <StandardListItem
-                                title="{map>customerName}"
-                                description="{map>city}, {map>country}"
-                                info="{map>revenueBand}"
-                                type="Active"
-                                press=".onListItemPress" />
-                        </items>
-                        <noData>
-                            <Text text="{i18n>noCustomersInView}" />
-                        </noData>
-                    </List>
+                    <!-- The list scrolls on its own, matching the map's height, so scrolling it doesn't move the map. -->
+                    <ScrollContainer vertical="true" horizontal="false" class="ohListScroll">
+                        <layoutData>
+                            <FlexItemData growFactor="1" shrinkFactor="1" minHeight="0" />
+                        </layoutData>
+                        <List id="customerList" items="{map>/customers}" mode="None" growing="true" growingThreshold="30" growingScrollToLoad="true">
+                            <items>
+                                <StandardListItem
+                                    title="{map>customerName}"
+                                    description="{map>city}, {map>country}"
+                                    info="{map>revenueBand}"
+                                    type="Active"
+                                    press=".onListItemPress" />
+                            </items>
+                            <noData>
+                                <Text text="{i18n>noCustomersInView}" />
+                            </noData>
+                        </List>
+                    </ScrollContainer>
                 </VBox>
             </layout:Grid>
         </f:content>
