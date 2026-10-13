@@ -1,0 +1,49 @@
+{
+  "xsappname": "orderhub",
+  "tenant-mode": "dedicated",
+  "scopes": [
+    { "name": "$XSAPPNAME.SalesRep", "description": "Sales Rep" },
+    { "name": "$XSAPPNAME.SalesManager", "description": "Sales Manager" },
+    { "name": "$XSAPPNAME.BillingClerk", "description": "Billing Clerk" }
+  ],
+  "attributes": [],
+  "role-templates": [
+    {
+      "name": "SalesRep",
+      "description": "Sales Rep",
+      "scope-references": ["$XSAPPNAME.SalesRep"]
+    },
+    {
+      "name": "SalesManager",
+      "description": "Sales Manager",
+      "scope-references": ["$XSAPPNAME.SalesManager"]
+    },
+    {
+      "name": "BillingClerk",
+      "description": "Billing Clerk",
+      "scope-references": ["$XSAPPNAME.BillingClerk"]
+    }
+  ],
+  "role-collections": [
+    {
+      "name": "OrderHub-SalesRep",
+      "description": "Northwind Order Hub - Sales Rep",
+      "role-template-references": ["$XSAPPNAME.SalesRep"]
+    },
+    {
+      "name": "OrderHub-SalesManager",
+      "description": "Northwind Order Hub - Sales Manager",
+      "role-template-references": ["$XSAPPNAME.SalesManager"]
+    },
+    {
+      "name": "OrderHub-BillingClerk",
+      "description": "Northwind Order Hub - Billing Clerk",
+      "role-template-references": ["$XSAPPNAME.BillingClerk"]
+    }
+  ],
+  "oauth2-configuration": {
+    "redirect-uris": [
+      "https://orderhub-approuter-cheerful-marmot-qw.cfapps.us10-001.hana.ondemand.com/**"
+    ]
+  }
+}

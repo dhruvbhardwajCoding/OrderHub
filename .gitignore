@@ -22,3 +22,7 @@ mta_archives/
 
 
 .env
+
+# approuter/webapp is a deploy-time copy of frontend/orderhub (see
+# approuter/README.md) — not committed to avoid a second copy to keep in sync.
+approuter/webapp/

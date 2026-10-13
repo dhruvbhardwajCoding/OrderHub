@@ -1,0 +1,14 @@
+applications:
+  - name: orderhub-approuter
+    path: .
+    memory: 128M
+    disk_quota: 256M
+    instances: 1
+    buildpacks:
+      - nodejs_buildpack
+    env:
+      destinations: '[{"name":"srv-api","url":"https://orderhub-srv-thankful-panda-dh.cfapps.us10-001.hana.ondemand.com","forwardAuthToken":true}]'
+    services:
+      - orderhub-xsuaa
+    random-route: true
+    health-check-type: process
