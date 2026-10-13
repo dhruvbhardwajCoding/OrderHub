@@ -2,14 +2,13 @@
     controllerName="orderhub.controller.CustomerDetail"
     xmlns:mvc="sap.ui.core.mvc"
     xmlns="sap.m"
-    xmlns:f="sap.ui.layout.form"
-    xmlns:layout="sap.ui.layout">
-    <Page title="{CompanyName}" showNavButton="true" navButtonPress=".onNavBack">
+    xmlns:f="sap.ui.layout.form">
+    <Page title="{CompanyName}" showNavButton="true" navButtonPress=".onNavBack" class="ohPage">
         <content>
             <ObjectHeader
                 title="{CompanyName}"
                 responsive="true"
-                fullScreenOptimized="true">
+                class="ohCardHeader">
                 <attributes>
                     <ObjectAttribute title="{i18n>contactName}" text="{ContactName}" />
                     <ObjectAttribute title="{i18n>contactTitle}" text="{ContactTitle}" />
@@ -17,8 +16,13 @@
                     <ObjectAttribute title="{i18n>country}" text="{Country}" />
                 </attributes>
             </ObjectHeader>
-            <Panel headerText="{i18n>customerInfoSection}">
-                <f:SimpleForm editable="false" layout="ResponsiveGridLayout">
+            <Panel headerText="{i18n>customerInfoSection}" class="ohCard">
+                <f:SimpleForm
+                    editable="false"
+                    layout="ResponsiveGridLayout"
+                    columnsL="2" columnsM="2"
+                    labelSpanXL="4" labelSpanL="4" labelSpanM="4" labelSpanS="12"
+                    emptySpanL="0" emptySpanM="0">
                     <f:content>
                         <Label text="{i18n>companyName}" />
                         <Text text="{CompanyName}" />
@@ -26,6 +30,10 @@
                         <Text text="{ContactName}" />
                         <Label text="{i18n>contactTitle}" />
                         <Text text="{ContactTitle}" />
+                        <Label text="{i18n>phone}" />
+                        <Text text="{Phone}" />
+                        <Label text="{i18n>fax}" />
+                        <Text text="{Fax}" />
                         <Label text="{i18n>address}" />
                         <Text text="{Address}" />
                         <Label text="{i18n>city}" />
@@ -36,20 +44,15 @@
                         <Text text="{PostalCode}" />
                         <Label text="{i18n>country}" />
                         <Text text="{Country}" />
-                        <Label text="{i18n>phone}" />
-                        <Text text="{Phone}" />
-                        <Label text="{i18n>fax}" />
-                        <Text text="{Fax}" />
                     </f:content>
                 </f:SimpleForm>
             </Panel>
         </content>
         <footer>
-            <Bar>
-                <contentRight>
-                    <Button text="{i18n>createOrder}" type="Emphasized" visible="{= ${user>/roles/SalesRep} === true}" press=".onCreateOrder" />
-                </contentRight>
-            </Bar>
+            <OverflowToolbar>
+                <ToolbarSpacer />
+                <Button text="{i18n>createOrder}" type="Emphasized" visible="{= ${user>/roles/SalesRep} === true}" press=".onCreateOrder" />
+            </OverflowToolbar>
         </footer>
     </Page>
 </mvc:View>

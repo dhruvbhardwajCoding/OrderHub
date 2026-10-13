@@ -5,8 +5,9 @@ sap.ui.define([
     "sap/ui/core/Fragment",
     "sap/m/MessageBox",
     "sap/ui/core/BusyIndicator",
+    "sap/ui/Device",
     "orderhub/model/formatter"
-], function (Controller, UIComponent, JSONModel, Fragment, MessageBox, BusyIndicator, formatter) {
+], function (Controller, UIComponent, JSONModel, Fragment, MessageBox, BusyIndicator, Device, formatter) {
     "use strict";
 
     return Controller.extend("orderhub.controller.App", {
@@ -15,11 +16,24 @@ sap.ui.define([
         onInit: function () {
             this.oRouter = UIComponent.getRouterFor(this);
             this.getView().setModel(new JSONModel({ text: "", proposed: null }), "ai");
+            // An expanded side nav takes most of a narrow screen; start collapsed there.
+            if (this._isNarrow()) {
+                this.byId("toolPage").setSideExpanded(false);
+            }
+        },
+
+        // Width-based, not Device.system.phone: that checks the user agent, so a
+        // narrowed desktop browser would still get the expanded nav.
+        _isNarrow: function () {
+            return Device.resize.width < 1024;
         },
 
         onSideNavItemSelect: function (oEvent) {
             var sKey = oEvent.getParameter("item").getKey();
             this.oRouter.navTo(sKey);
+            if (this._isNarrow()) {
+                this.byId("toolPage").setSideExpanded(false);
+            }
         },
 
         onMenuButtonPress: function () {

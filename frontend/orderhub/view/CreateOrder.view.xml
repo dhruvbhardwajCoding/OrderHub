@@ -3,55 +3,55 @@
     xmlns:mvc="sap.ui.core.mvc"
     xmlns="sap.m"
     xmlns:core="sap.ui.core">
-    <Page title="{i18n>createOrderTitle}" showNavButton="true" navButtonPress=".onNavBack">
-        <Panel headerText="{i18n>selectedCustomer}">
-            <ObjectHeader
-                id="customerHeader"
-                title="{orderModel>/customerName}">
-                <attributes>
-                    <ObjectAttribute text="{orderModel>/city}" />
-                    <ObjectAttribute text="{orderModel>/country}" />
-                </attributes>
-            </ObjectHeader>
-        </Panel>
+    <Page title="{i18n>createOrderTitle}" showNavButton="true" navButtonPress=".onNavBack" class="ohPage">
+        <ObjectHeader
+            id="customerHeader"
+            title="{orderModel>/customerName}"
+            responsive="true"
+            class="ohCardHeader">
+            <attributes>
+                <ObjectAttribute title="{i18n>city}" text="{orderModel>/city}" />
+                <ObjectAttribute title="{i18n>country}" text="{orderModel>/country}" />
+            </attributes>
+        </ObjectHeader>
 
-        <Panel id="orderItemsPanel" headerText="{i18n>orderItems}">
+        <Panel id="orderItemsPanel" class="ohCard">
             <headerToolbar>
-                <Toolbar>
+                <OverflowToolbar>
                     <Title text="{i18n>orderItems}" />
                     <ToolbarSpacer />
-                    <Button icon="sap-icon://add" text="{i18n>addProduct}" press=".onAddProduct" />
-                </Toolbar>
+                    <Button icon="sap-icon://add" text="{i18n>addProduct}" type="Emphasized" press=".onAddProduct" />
+                </OverflowToolbar>
             </headerToolbar>
             <Table id="itemsTable" items="{orderModel>/items}">
                 <noData>
-                    <IllustratedMessage />
+                    <IllustratedMessage illustrationType="sapIllus-NoData" illustrationSize="Spot" title="{i18n>noProductsSelected}" description=" " />
                 </noData>
                 <columns>
                     <Column>
                         <Text text="{i18n>product}" />
                     </Column>
-                    <Column>
+                    <Column hAlign="End" minScreenWidth="Tablet" demandPopin="true">
                         <Text text="{i18n>unitPrice}" />
                     </Column>
-                    <Column>
+                    <Column width="7rem">
                         <Text text="{i18n>quantity}" />
                     </Column>
-                    <Column>
+                    <Column width="7rem" minScreenWidth="Tablet" demandPopin="true">
                         <Text text="{i18n>discount}" />
                     </Column>
-                    <Column>
+                    <Column minScreenWidth="Tablet" demandPopin="true">
                         <Text text="{i18n>stockColumn}" />
                     </Column>
-                    <Column>
-                        <Text text="{i18n>remove}" />
+                    <Column width="3.5rem" hAlign="End">
+                        <Text text="" />
                     </Column>
                 </columns>
                 <items>
-                    <ColumnListItem>
+                    <ColumnListItem vAlign="Middle">
                         <cells>
                             <Text text="{orderModel>productName}" />
-                            <ObjectNumber number="{orderModel>unitPrice}" />
+                            <ObjectNumber number="{orderModel>unitPrice}" unit="USD" />
                             <Input value="{orderModel>quantity}" type="Number" placeholder="Qty" />
                             <Input value="{orderModel>discount}" type="Number" placeholder="%" />
                             <ObjectStatus
@@ -59,7 +59,7 @@
                                 icon="sap-icon://alert"
                                 state="Warning"
                                 text="{i18n>stockWarningShort}" />
-                            <Button icon="sap-icon://delete" type="Reject" press=".onRemoveProduct" />
+                            <Button icon="sap-icon://delete" type="Transparent" tooltip="{i18n>removeProduct}" press=".onRemoveProduct" />
                         </cells>
                     </ColumnListItem>
                 </items>
@@ -67,12 +67,11 @@
         </Panel>
 
         <footer>
-            <Bar>
-                <contentRight>
-                    <Button text="{i18n>saveOrder}" press=".onSaveOrder" />
-                    <Button text="{i18n>submitOrder}" type="Emphasized" press=".onSubmitOrder" />
-                </contentRight>
-            </Bar>
+            <OverflowToolbar>
+                <ToolbarSpacer />
+                <Button text="{i18n>saveOrder}" press=".onSaveOrder" />
+                <Button text="{i18n>submitOrder}" type="Emphasized" press=".onSubmitOrder" />
+            </OverflowToolbar>
         </footer>
     </Page>
 </mvc:View>

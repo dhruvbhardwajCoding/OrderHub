@@ -3,14 +3,16 @@
     xmlns:mvc="sap.ui.core.mvc"
     xmlns="sap.m"
     xmlns:f="sap.ui.layout.form">
-    <Page title="{orderNo}" showNavButton="true" navButtonPress=".onNavBack">
+    <Page title="{orderNo}" showNavButton="true" navButtonPress=".onNavBack" class="ohPage">
         <ObjectHeader
             title="{orderNo}"
             number="{grossAmount}"
-            numberUnit="{currency_code}">
+            numberUnit="{currency_code}"
+            responsive="true"
+            class="ohCardHeader">
             <attributes>
-                <ObjectAttribute text="{customerName}" />
-                <ObjectAttribute text="{status}" />
+                <ObjectAttribute title="{i18n>customer}" text="{customerName}" />
+                <ObjectAttribute title="{i18n>createdAt}" text="{path: 'createdAt', formatOptions: {style: 'medium'}}" />
             </attributes>
             <statuses>
                 <ObjectStatus text="{status}" state="{
@@ -19,9 +21,13 @@
                 }" />
             </statuses>
         </ObjectHeader>
-        
-        <Panel headerText="{i18n>orderDetails}">
-            <f:SimpleForm>
+
+        <Panel headerText="{i18n>orderDetails}" class="ohCard">
+            <f:SimpleForm
+                layout="ResponsiveGridLayout"
+                columnsL="2" columnsM="2"
+                labelSpanXL="4" labelSpanL="4" labelSpanM="4" labelSpanS="12"
+                emptySpanL="0" emptySpanM="0">
                 <f:content>
                     <Label text="{i18n>orderNo}" />
                     <Text text="{orderNo}" />
@@ -31,40 +37,34 @@
                     <Text text="{customerName}" />
                     <Label text="{i18n>status}" />
                     <Text text="{status}" />
-                    <Label text="{i18n>currencyCode}" />
-                    <Text text="{currency_code}" />
-                    <Label text="{i18n>netAmount}" />
-                    <Text text="{netAmount}" />
-                    <Label text="{i18n>taxAmount}" />
-                    <Text text="{taxAmount}" />
-                    <Label text="{i18n>grossAmount}" />
-                    <Text text="{grossAmount}" />
                     <Label text="{i18n>createdAt}" />
-                    <Text text="{
-                        path: 'createdAt',
-                        type: 'sap.ui.model.odata.type.DateTimeOffset',
-                        formatOptions: { style: 'medium' }
-                    }" />
+                    <Text text="{path: 'createdAt', formatOptions: {style: 'medium'}}" />
+                    <Label text="{i18n>netAmount}" />
+                    <ObjectNumber number="{netAmount}" unit="{currency_code}" emphasized="false" />
+                    <Label text="{i18n>taxAmount}" />
+                    <ObjectNumber number="{taxAmount}" unit="{currency_code}" emphasized="false" />
+                    <Label text="{i18n>grossAmount}" />
+                    <ObjectNumber number="{grossAmount}" unit="{currency_code}" />
                 </f:content>
             </f:SimpleForm>
         </Panel>
 
-        <Panel headerText="{i18n>orderItems}">
+        <Panel headerText="{i18n>orderItems}" class="ohCard">
             <Table items="{items}">
                 <columns>
                     <Column>
                         <Text text="{i18n>product}" />
                     </Column>
-                    <Column>
+                    <Column hAlign="End" minScreenWidth="Tablet" demandPopin="true">
                         <Text text="{i18n>unitPrice}" />
                     </Column>
-                    <Column>
+                    <Column hAlign="End">
                         <Text text="{i18n>quantity}" />
                     </Column>
-                    <Column>
+                    <Column hAlign="End" minScreenWidth="Tablet" demandPopin="true">
                         <Text text="{i18n>discount}" />
                     </Column>
-                    <Column>
+                    <Column hAlign="End">
                         <Text text="{i18n>netAmount}" />
                     </Column>
                 </columns>
@@ -74,7 +74,7 @@
                             <Text text="{productName}" />
                             <ObjectNumber number="{unitPrice}" />
                             <Text text="{quantity}" />
-                            <Text text="{discount}" />
+                            <Text text="{discount}%" />
                             <ObjectNumber number="{netAmount}" />
                         </cells>
                     </ColumnListItem>
@@ -82,8 +82,12 @@
             </Table>
         </Panel>
 
-        <Panel headerText="{i18n>invoiceDetails}" id="invoicePanel" visible="false">
-            <f:SimpleForm>
+        <Panel headerText="{i18n>invoiceDetails}" id="invoicePanel" visible="false" class="ohCard">
+            <f:SimpleForm
+                layout="ResponsiveGridLayout"
+                columnsL="2" columnsM="2"
+                labelSpanXL="4" labelSpanL="4" labelSpanM="4" labelSpanS="12"
+                emptySpanL="0" emptySpanM="0">
                 <f:content>
                     <Label text="{i18n>invoiceNo}" />
                     <Text text="{invoice/invoiceNo}" />
@@ -93,11 +97,7 @@
                         formatter: '.formatter.mailStatusState'
                     }" />
                     <Label text="{i18n>sentAt}" />
-                    <Text text="{
-                        path: 'invoice/sentAt',
-                        type: 'sap.ui.model.odata.type.DateTimeOffset',
-                        formatOptions: { style: 'medium' }
-                    }" />
+                    <Text text="{path: 'invoice/sentAt', formatOptions: {style: 'medium'}}" />
                     <Label text="{i18n>sentTo}" />
                     <Text text="{invoice/sentTo}" />
                 </f:content>
@@ -105,17 +105,16 @@
         </Panel>
 
         <footer>
-            <Bar>
-                <contentRight>
-                    <Button id="btnDelete" text="{i18n>deleteOrder}" type="Reject" visible="false" press=".onDelete" />
-                    <Button id="btnSubmit" text="{i18n>submit}" type="Emphasized" visible="false" press=".onSubmit" />
-                    <Button id="btnApprove" text="{i18n>approve}" type="Accept" visible="false" press=".onApprove" />
-                    <Button id="btnCancel" text="{i18n>cancel}" type="Reject" visible="false" press=".onCancel" />
-                    <Button id="btnCreateInvoice" text="{i18n>createInvoice}" type="Accept" visible="false" press=".onCreateInvoice" />
-                    <Button id="btnViewInvoice" text="{i18n>viewInvoice}" type="Default" visible="false" press=".onViewInvoice" />
-                    <Button id="btnSendInvoice" text="{i18n>sendInvoice}" type="Emphasized" visible="false" press=".onSendInvoice" />
-                </contentRight>
-            </Bar>
+            <OverflowToolbar>
+                <ToolbarSpacer />
+                <Button id="btnDelete" text="{i18n>deleteOrder}" type="Reject" visible="false" press=".onDelete" />
+                <Button id="btnSubmit" text="{i18n>submit}" type="Emphasized" visible="false" press=".onSubmit" />
+                <Button id="btnApprove" text="{i18n>approve}" type="Accept" visible="false" press=".onApprove" />
+                <Button id="btnCancel" text="{i18n>cancel}" type="Reject" visible="false" press=".onCancel" />
+                <Button id="btnCreateInvoice" text="{i18n>createInvoice}" type="Accept" visible="false" press=".onCreateInvoice" />
+                <Button id="btnViewInvoice" text="{i18n>viewInvoice}" type="Default" visible="false" press=".onViewInvoice" />
+                <Button id="btnSendInvoice" text="{i18n>sendInvoice}" type="Emphasized" visible="false" press=".onSendInvoice" />
+            </OverflowToolbar>
         </footer>
     </Page>
 </mvc:View>

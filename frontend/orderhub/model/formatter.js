@@ -1,7 +1,23 @@
-sap.ui.define([], function () {
+sap.ui.define(["sap/ui/core/format/NumberFormat"], function (NumberFormat) {
     "use strict";
 
+    // NumericContent truncates to 4 characters, so 21699.02 rendered as "2169".
+    // Split a short-style number ("21.7K") into the value and scale parts it supports.
+    var oShortFormat = NumberFormat.getFloatInstance({ style: "short", maxFractionDigits: 1 });
+    function splitShort(fValue) {
+        var aMatch = /^([\d.,-]+)\s*(\D*)$/.exec(oShortFormat.format(Number(fValue) || 0));
+        return aMatch ? [aMatch[1], aMatch[2]] : [String(fValue), ""];
+    }
+
     return {
+        compactValue: function (fValue) {
+            return splitShort(fValue)[0];
+        },
+
+        compactScale: function (fValue) {
+            return splitShort(fValue)[1];
+        },
+
         statusState: function (sStatus) {
             switch (sStatus) {
                 case "New":

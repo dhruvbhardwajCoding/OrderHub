@@ -3,39 +3,41 @@
     xmlns:mvc="sap.ui.core.mvc"
     xmlns="sap.m"
     xmlns:core="sap.ui.core"
-    xmlns:layout="sap.ui.layout"
     xmlns:viz="sap.viz.ui5.controls"
     xmlns:vizData="sap.viz.ui5.data"
     xmlns:vizFeeds="sap.viz.ui5.controls.common.feeds">
-    <Page title="{i18n>dashboardTitle}" showNavButton="false">
+    <Page title="{i18n>dashboardTitle}" showNavButton="false" class="ohPage">
         <content>
-            <Panel headerText="{i18n>overviewHeader}" busy="{dashboard>/busy}">
-                <HBox wrap="Wrap" fitContainer="true" renderType="Bare">
-                    <GenericTile header="{i18n>totalOrdersHeader}" press="onOrderPress" class="sapUiTinyMarginEnd sapUiTinyMarginBottom">
+            <Panel headerText="{i18n>overviewHeader}" busy="{dashboard>/busy}" class="ohCard">
+                <HBox renderType="Bare" class="ohKpis">
+                    <GenericTile header="{i18n>totalOrdersHeader}" press="onOrderPress">
                         <TileContent>
-                            <NumericContent value="{dashboard>/orderCount}" />
+                            <NumericContent value="{dashboard>/orderCount}" withMargin="false" />
                         </TileContent>
                     </GenericTile>
-                    <GenericTile header="{i18n>totalRevenueHeader}" class="sapUiTinyMarginEnd sapUiTinyMarginBottom">
-                        <TileContent>
-                            <NumericContent value="{dashboard>/revenue}" withMargin="false" />
+                    <GenericTile header="{i18n>totalRevenueHeader}">
+                        <TileContent unit="USD">
+                            <NumericContent
+                                value="{path: 'dashboard>/revenue', formatter: '.formatter.compactValue'}"
+                                scale="{path: 'dashboard>/revenue', formatter: '.formatter.compactScale'}"
+                                withMargin="false" />
                         </TileContent>
                     </GenericTile>
-                    <GenericTile header="{i18n>pendingApprovalsHeader}" class="sapUiTinyMarginEnd sapUiTinyMarginBottom">
+                    <GenericTile header="{i18n>pendingApprovalsHeader}">
                         <TileContent>
-                            <NumericContent value="{dashboard>/openApprovals}" valueColor="Critical" />
+                            <NumericContent value="{dashboard>/openApprovals}" valueColor="Critical" withMargin="false" />
                         </TileContent>
                     </GenericTile>
-                    <GenericTile header="{i18n>invoicesSentHeader}" class="sapUiTinyMarginEnd sapUiTinyMarginBottom">
+                    <GenericTile header="{i18n>invoicesSentHeader}">
                         <TileContent>
-                            <NumericContent value="{dashboard>/invoicesSent}" valueColor="Good" />
+                            <NumericContent value="{dashboard>/invoicesSent}" valueColor="Good" withMargin="false" />
                         </TileContent>
                     </GenericTile>
                 </HBox>
             </Panel>
 
-            <layout:Grid defaultSpan="L6 M12 S12" width="100%">
-                <Panel headerText="{i18n>revenueByCountryHeader}" class="sapUiResponsiveMargin">
+            <HBox renderType="Bare" class="ohChartGrid">
+                <Panel headerText="{i18n>revenueByCountryHeader}" class="ohCard">
                     <viz:VizFrame id="revenueByCountryChart" uiConfig="{applicationSet:'fiori'}" height="300px" width="100%" vizType="bar">
                         <viz:dataset>
                             <vizData:FlattenedDataset data="{dashboard>/revenueByCountry}">
@@ -54,7 +56,7 @@
                     </viz:VizFrame>
                 </Panel>
 
-                <Panel headerText="{i18n>revenueByCategoryHeader}" class="sapUiResponsiveMargin">
+                <Panel headerText="{i18n>revenueByCategoryHeader}" class="ohCard">
                     <viz:VizFrame id="revenueByCategoryChart" uiConfig="{applicationSet:'fiori'}" height="300px" width="100%" vizType="donut">
                         <viz:dataset>
                             <vizData:FlattenedDataset data="{dashboard>/revenueByCategory}">
@@ -72,14 +74,14 @@
                         </viz:feeds>
                     </viz:VizFrame>
                 </Panel>
-            </layout:Grid>
+            </HBox>
 
-            <Panel headerText="{i18n>topCustomersHeader}">
+            <Panel headerText="{i18n>topCustomersHeader}" class="ohCard">
                 <Table items="{dashboard>/topCustomers}">
                     <columns>
                         <Column><Text text="{i18n>colCustomer}" /></Column>
-                        <Column><Text text="{i18n>colCountry}" /></Column>
-                        <Column hAlign="End"><Text text="{i18n>colOrders}" /></Column>
+                        <Column minScreenWidth="Tablet" demandPopin="true"><Text text="{i18n>colCountry}" /></Column>
+                        <Column hAlign="End" minScreenWidth="Tablet" demandPopin="true"><Text text="{i18n>colOrders}" /></Column>
                         <Column hAlign="End"><Text text="{i18n>colRevenue}" /></Column>
                     </columns>
                     <items>
@@ -88,7 +90,7 @@
                                 <Text text="{dashboard>customerName}" />
                                 <Text text="{dashboard>country}" />
                                 <Text text="{dashboard>orderCount}" />
-                                <ObjectNumber number="{dashboard>revenue}" />
+                                <ObjectNumber number="{path: 'dashboard>revenue', type: 'sap.ui.model.type.Float', formatOptions: {minFractionDigits: 2, maxFractionDigits: 2}}" unit="USD" />
                             </cells>
                         </ColumnListItem>
                     </items>
@@ -98,19 +100,19 @@
                 </Table>
             </Panel>
 
-            <Panel headerText="{i18n>recentOrdersHeader}">
+            <Panel headerText="{i18n>recentOrdersHeader}" class="ohCard">
                 <Table items="{
                     path: '/SalesOrders',
                     parameters: {
                         $orderby: 'createdAt desc'
                     }
-                }">
+                }" growing="true" growingThreshold="10">
                     <columns>
                         <Column><Text text="{i18n>orderNo}" /></Column>
-                        <Column><Text text="{i18n>customer}" /></Column>
+                        <Column minScreenWidth="Tablet" demandPopin="true"><Text text="{i18n>customer}" /></Column>
                         <Column><Text text="{i18n>status}" /></Column>
-                        <Column><Text text="{i18n>grossAmount}" /></Column>
-                        <Column><Text text="{i18n>createdAt}" /></Column>
+                        <Column hAlign="End" minScreenWidth="Tablet" demandPopin="true"><Text text="{i18n>grossAmount}" /></Column>
+                        <Column minScreenWidth="Desktop" demandPopin="true"><Text text="{i18n>createdAt}" /></Column>
                     </columns>
                     <items>
                         <ColumnListItem type="Navigation" press=".onOrderPress">
@@ -121,8 +123,8 @@
                                     path: 'status',
                                     formatter: '.formatter.statusState'
                                 }" />
-                                <Text text="{grossAmount}" />
-                                <Text text="{createdAt}" />
+                                <ObjectNumber number="{grossAmount}" unit="{currency_code}" />
+                                <Text text="{path: 'createdAt', formatOptions: {style: 'medium'}}" />
                             </cells>
                         </ColumnListItem>
                     </items>

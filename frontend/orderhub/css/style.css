@@ -1,0 +1,52 @@
+/* Page padding: tighter on phones, roomier on wider screens. */
+.ohPage > .sapMPageEnableScrolling {
+    padding: 0.5rem;
+}
+@media (min-width: 600px) {
+    .ohPage > .sapMPageEnableScrolling { padding: 1rem; }
+}
+@media (min-width: 1024px) {
+    .ohPage > .sapMPageEnableScrolling { padding: 1.5rem 2rem; }
+}
+
+/* Panels as cards with consistent gaps. */
+.ohCard.sapMPanel {
+    margin-bottom: 1rem;
+    border-radius: 0.75rem;
+    overflow: hidden;
+    box-shadow: 0 0 0.125rem rgba(34, 53, 72, 0.15), 0 0.125rem 0.5rem rgba(34, 53, 72, 0.1);
+}
+
+.ohCardHeader {
+    margin-bottom: 1rem;
+    border-radius: 0.75rem;
+    overflow: hidden;
+}
+
+/* KPI tiles: fluid grid instead of fixed 11rem tiles that overflow on phones. */
+.ohKpis {
+    display: grid !important;
+    grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+    gap: 0.75rem;
+    padding: 0.25rem;
+}
+@media (max-width: 599px) {
+    .ohKpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+.ohKpis .sapMGT {
+    width: auto;
+    margin: 0;
+}
+
+/* Charts side by side on wide screens, stacked on narrow ones. */
+.ohChartGrid {
+    display: grid !important;
+    grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+    column-gap: 1rem;
+}
+
+.ohMap {
+    border-radius: 0.75rem;
+    overflow: hidden;
+    box-shadow: 0 0 0.125rem rgba(34, 53, 72, 0.15), 0 0.125rem 0.5rem rgba(34, 53, 72, 0.1);
+}
