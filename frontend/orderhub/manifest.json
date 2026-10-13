@@ -129,6 +129,11 @@
           "target": "createOrder"
         },
         {
+          "name": "orderDraft",
+          "pattern": "orders/{orderID}/draft",
+          "target": "orderDraft"
+        },
+        {
           "name": "products",
           "pattern": "products",
           "target": "products"
@@ -157,6 +162,10 @@
         },
         "createOrder": {
           "viewName": "CreateOrder",
+          "viewLevel": 6
+        },
+        "orderDraft": {
+          "viewName": "OrderDraft",
           "viewLevel": 6
         },
         "products": {

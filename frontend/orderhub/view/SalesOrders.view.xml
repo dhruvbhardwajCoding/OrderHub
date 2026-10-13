@@ -17,6 +17,9 @@
                     growingThreshold="25"
                     items="{
                         path: '/SalesOrders',
+                        parameters: {
+                            $filter: 'IsActiveEntity eq false or SiblingEntity/IsActiveEntity eq null'
+                        },
                         sorter: {
                             path: 'createdAt',
                             descending: true
@@ -48,12 +51,11 @@
                     <items>
                         <ColumnListItem type="Navigation">
                             <cells>
-                                <Text text="{orderNo}" />
+                                <Text text="{= ${orderNo} ? ${orderNo} : ${i18n>draftStatus} }" />
                                 <Text text="{customerName}" />
-                                <ObjectStatus text="{status}" state="{
-                                    path: 'status',
-                                    formatter: '.formatter.statusState'
-                                }" />
+                                <ObjectStatus
+                                    text="{parts: [{path: 'IsActiveEntity', targetType: 'any'}, {path: 'status', targetType: 'any'}, {path: 'i18n>draftStatus', targetType: 'any'}], formatter: '.formatter.orderListStatusText'}"
+                                    state="{parts: [{path: 'IsActiveEntity', targetType: 'any'}, {path: 'status', targetType: 'any'}], formatter: '.formatter.orderListStatusState'}" />
                                 <ObjectNumber number="{netAmount}" unit="{currency_code}" />
                                 <ObjectNumber number="{grossAmount}" unit="{currency_code}" />
                                 <Text text="{path: 'createdAt', formatOptions: {style: 'medium'}}" />

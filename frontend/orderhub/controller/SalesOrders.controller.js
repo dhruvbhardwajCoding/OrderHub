@@ -74,9 +74,15 @@ sap.ui.define([
             var oItem = oEvent.getParameter("listItem");
             var oContext = oItem.getBindingContext();
             var sID = oContext.getProperty("ID");
-            this.getOwnerComponent().getRouter().navTo("salesOrder", {
-                orderID: sID
-            });
+            var bIsActiveEntity = oContext.getProperty("IsActiveEntity");
+            var oRouter = this.getOwnerComponent().getRouter();
+            // SO-08: a draft row (never activated, or mid-edit) opens the
+            // draft editor; an active row opens the normal object page.
+            if (bIsActiveEntity === false) {
+                oRouter.navTo("orderDraft", { orderID: sID });
+            } else {
+                oRouter.navTo("salesOrder", { orderID: sID });
+            }
         }
     });
 });

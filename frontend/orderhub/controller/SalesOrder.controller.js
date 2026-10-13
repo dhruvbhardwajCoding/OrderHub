@@ -27,6 +27,8 @@ sap.ui.define([
             var sOrderID = oEvent.getParameter("arguments").orderID;
 
             // Hide all buttons initially
+            this.byId("btnContinueDraft").setVisible(false);
+            this.byId("btnEdit").setVisible(false);
             this.byId("btnDelete").setVisible(false);
             this.byId("btnSubmit").setVisible(false);
             this.byId("btnApprove").setVisible(false);
@@ -35,11 +37,17 @@ sap.ui.define([
             var oView = this.getView();
             // SO-08: SalesOrders' key is now (ID, IsActiveEntity) — always bind
             // to the active instance here; drafts get their own route/view
-            // (orderDraft).
+            // (orderDraft). HasDraftEntity is only ever read imperatively
+            // (oContext.getProperty in _updateButtonVisibility below), never
+            // from a declarative XML binding, so autoExpandSelect's
+            // view-binding-based inference never picks it up on its own
+            // (verified live — it's missing from the auto-generated $select
+            // otherwise) and needs this explicit entry.
             oView.bindElement({
                 path: "/SalesOrders(ID=" + sOrderID + ",IsActiveEntity=true)",
                 parameters: {
-                    $expand: "items,invoice"
+                    $expand: "items,invoice",
+                    $select: "HasDraftEntity"
                 },
                 events: {
                     dataReceived: function () {
@@ -76,6 +84,13 @@ sap.ui.define([
             var bIsSalesManager = oUserModel.getProperty("/roles/SalesManager") === true;
             var bIsBillingClerk = oUserModel.getProperty("/roles/BillingClerk") === true;
 
+            // SO-08: a leftover draft (started via Edit, never saved or
+            // discarded) takes priority over the plain Edit entry point —
+            // only one of the two is ever shown.
+            var bHasDraft = !!oContext.getProperty("HasDraftEntity");
+            this.byId("btnContinueDraft").setVisible(bHasDraft && bIsSalesRep);
+            this.byId("btnEdit").setVisible(sStatus === "New" && bIsSalesRep && !bHasDraft);
+
             // Alice (SalesRep): Delete (when New) + Submit (when New) + Cancel (when New or Submitted)
             // Bob (SalesManager): Approve (when Submitted) + Cancel (when New or Submitted)
             this.byId("btnDelete").setVisible(sStatus === "New" && bIsSalesRep);
@@ -101,6 +116,27 @@ sap.ui.define([
             } else {
                 this.getOwnerComponent().getRouter().navTo("salesOrders", {}, true);
             }
+        },
+
+        onContinueDraft: function () {
+            var oContext = this.getView().getBindingContext();
+            this.getOwnerComponent().getRouter().navTo("orderDraft", { orderID: oContext.getProperty("ID") });
+        },
+
+        onEdit: function () {
+            var that = this;
+            BusyIndicator.show(0);
+            var oContext = this.getView().getBindingContext();
+            var sOrderID = oContext.getProperty("ID");
+            var oAction = oContext.getModel().bindContext("OrderService.draftEdit(...)", oContext);
+            oAction.setParameter("PreserveChanges", true);
+            oAction.execute().then(function () {
+                BusyIndicator.hide();
+                that.getOwnerComponent().getRouter().navTo("orderDraft", { orderID: sOrderID });
+            }).catch(function (oError) {
+                BusyIndicator.hide();
+                MessageBox.error(oError.message || "Could not start editing this order.");
+            });
         },
 
         onDelete: function () {

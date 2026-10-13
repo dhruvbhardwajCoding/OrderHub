@@ -107,6 +107,8 @@
         <footer>
             <OverflowToolbar>
                 <ToolbarSpacer />
+                <Button id="btnContinueDraft" text="{i18n>continueDraft}" type="Emphasized" visible="false" press=".onContinueDraft" />
+                <Button id="btnEdit" text="{i18n>editOrder}" type="Default" visible="false" press=".onEdit" />
                 <Button id="btnDelete" text="{i18n>deleteOrder}" type="Reject" visible="false" press=".onDelete" />
                 <Button id="btnSubmit" text="{i18n>submit}" type="Emphasized" visible="false" press=".onSubmit" />
                 <Button id="btnApprove" text="{i18n>approve}" type="Accept" visible="false" press=".onApprove" />

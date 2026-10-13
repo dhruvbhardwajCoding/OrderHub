@@ -35,6 +35,34 @@ sap.ui.define(["sap/ui/core/format/NumberFormat"], function (NumberFormat) {
             }
         },
 
+        // SO-08: the Sales Orders list shows drafts alongside active orders
+        // (an unsaved draft's own `status` defaults to "New" just like a
+        // real New order, so the list needs its own text/state that shows
+        // "Draft" instead — duplicating statusState's switch rather than
+        // calling it, since a formatter referenced as ".formatter.xyz" in
+        // XML isn't guaranteed to run with `this` bound to this module).
+        orderListStatusText: function (bIsActiveEntity, sStatus, sDraftLabel) {
+            return bIsActiveEntity === false ? sDraftLabel : sStatus;
+        },
+
+        orderListStatusState: function (bIsActiveEntity, sStatus) {
+            if (bIsActiveEntity === false) return "Warning";
+            switch (sStatus) {
+                case "New":
+                    return "None";
+                case "Submitted":
+                    return "Warning";
+                case "Approved":
+                    return "Success";
+                case "Invoiced":
+                    return "Information";
+                case "Cancelled":
+                    return "Error";
+                default:
+                    return "None";
+            }
+        },
+
         statusIcon: function (sStatus) {
             switch (sStatus) {
                 case "New":
@@ -117,6 +145,17 @@ sap.ui.define(["sap/ui/core/format/NumberFormat"], function (NumberFormat) {
         },
 
         stockWarningVisible: function (iQuantity, iUnitsInStock) {
+            return iUnitsInStock != null && Number(iQuantity) > Number(iUnitsInStock);
+        },
+
+        // SO-08: the draft editor's items are real OData rows, which don't
+        // carry unitsInStock (not a SalesOrderItems field) — the controller
+        // fetches it once into a flat {productID: unitsInStock} JSON model
+        // and this does the same comparison as stockWarningVisible, but via
+        // a lookup in that map instead of a value already on the row.
+        stockWarningVisibleByLookup: function (iQuantity, iProductID, oStockMap) {
+            if (!oStockMap || iProductID == null) return false;
+            var iUnitsInStock = oStockMap[iProductID];
             return iUnitsInStock != null && Number(iQuantity) > Number(iUnitsInStock);
         },
 
